@@ -99,31 +99,32 @@ def tokenize_queries(path: Path) -> pd.DataFrame:
 
     return queries_df
 
+
 def set_new_index(df: DataFrame) -> DataFrame:
-    df['idx'] = pd.Int64Index(range(df.shape[0]))
-    return df.set_index('idx')
+    df["idx"] = pd.Int64Index(range(df.shape[0]))
+    return df.set_index("idx")
 
 
 def build_dataset_from_dataframe(df: DataFrame, source: str) -> List[Dict]:
     dataset: List[Dict] = []
     for index, row in df.iterrows():
-        dataset.append({
-            'info': {
-                'pid': row['pid'], # passage id
-                'qid': row['qid'], # query id
-                'source': source
-            },
-            'input': {
-                'document': row['passage'],
-                'query': row['query']
-            },
-            'target': row['bm25']
-        })
-    
+        dataset.append(
+            {
+                "info": {
+                    "pid": row["pid"],  # passage id
+                    "qid": row["qid"],  # query id
+                    "source": source,
+                },
+                "input": {"document": row["passage"], "query": row["query"]},
+                "target": row["bm25"],
+            }
+        )
+
     return dataset
 
+
 def write_dataset_to_file(path: Path, dataset) -> None:
-    with open(path, 'w') as outfile:
+    with open(path, "w") as outfile:
         json.dump(dataset, outfile, indent=4)
 
 
@@ -135,7 +136,8 @@ def main(size: int, path_corpus: str, path_queries: str):
     queries_df = tokenize_queries(Path(path_queries))  # preprocess quueries for bm25
 
     # get random passages
-    rand_idx_passages = np.random.default_rng(seed=0).choice(corpus_df.shape[0], size=size) # TODO: remove seed
+    rng = np.random.default_rng()
+    rand_idx_passages = rng.choice(corpus_df.shape[0], size=size)
     rand_passages = corpus_df.iloc[rand_idx_passages]
     # reset index to merge with queries later
     rand_passages = set_new_index(rand_passages)
@@ -145,9 +147,7 @@ def main(size: int, path_corpus: str, path_queries: str):
         queries_df.shape[0] > size
     ), f"The supposed dataset of size {size} is attempted to sample from {queries_df.shape[0]} queries. Choose a smaller dataset size or increase the number of queries sampled from"
 
-    rand_idx_queries = np.random.default_rng(seed=0).choice( # TODO: remove seed
-        queries_df.shape[0], size=size, replace=False
-    )
+    rand_idx_queries = rng.choice(queries_df.shape[0], size=size, replace=False)
     rand_queries = queries_df.iloc[rand_idx_queries]
     rand_queries = set_new_index(rand_queries)
 
@@ -155,12 +155,15 @@ def main(size: int, path_corpus: str, path_queries: str):
     passage_query_df = pd.concat([rand_passages, rand_queries], sort=False, axis=1)
 
     # calculate bm25 scores
-    passage_query_df['bm25'] = passage_query_df.apply(lambda x: bm25.get_scores(x['preprpcessed_query'])[x['pid']], axis=1)
+    passage_query_df["bm25"] = passage_query_df.apply(
+        lambda x: bm25.get_scores(x["preprpcessed_query"])[x["pid"]], axis=1
+    )
 
-    
-    dataset_dict = build_dataset_from_dataframe(passage_query_df, source='msmarco passage re-ranking')
+    dataset_dict = build_dataset_from_dataframe(
+        passage_query_df, source="msmarco passage re-ranking"
+    )
 
-    write_dataset_to_file(Path('./datasets/msmarco_test.json'), dataset_dict)
+    write_dataset_to_file(Path("./datasets/msmarco_test.json"), dataset_dict)
 
 
 if __name__ == "__main__":
