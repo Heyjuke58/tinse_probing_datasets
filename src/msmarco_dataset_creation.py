@@ -24,6 +24,7 @@ ner_nlp = en_core_web_sm.load()
 
 
 download("stopwords")
+download("punkt")
 
 STOPWORDS = set(stopwords.words("english"))
 POTERT_STEMMER = PorterStemmer()
