@@ -99,7 +99,7 @@ def timing(description: str) -> None:
 
 
 def tokenize_corpus(path: Path) -> pd.DataFrame:
-    corpus_df = pd.read_csv(path, sep="\t", header=None, names=["pid", "passage"], encoding='latin-1')
+    corpus_df = pd.read_csv(path, sep="\t", header=None, names=["pid", "passage"], encoding='utf-8')
     corpus_df["preprocessed_passage"] = corpus_df["passage"].apply(word_tokenize)
     corpus_df["preprocessed_passage"] = corpus_df["preprocessed_passage"].apply(
         lambda x: [word for word in x if word.isalnum()]
@@ -216,8 +216,8 @@ def build_sem_sim_dataset_from_dataframe(df: DataFrame, source: str) -> List[Dic
 
 
 def write_dataset_to_file(path: Path, dataset) -> None:
-    with open(path, "w") as outfile:
-        json.dump(dataset, outfile, indent=4)
+    with open(path, "w", encoding='utf8') as outfile:
+        json.dump(dataset, outfile, indent=4, ensure_ascii=False)
 
 
 def bm25_dataset_creation(size: int, max_samples_per_query: int, corpus_df: DataFrame, queries_df: DataFrame, source: str, output_filename: str) -> None:
