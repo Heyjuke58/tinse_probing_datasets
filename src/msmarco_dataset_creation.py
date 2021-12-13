@@ -1,4 +1,5 @@
 from typing import List, Dict, Tuple
+import ftfy
 import random
 from collections import defaultdict
 from pathlib import Path
@@ -29,8 +30,9 @@ download("punkt")
 STOPWORDS = set(stopwords.words("english"))
 POTERT_STEMMER = PorterStemmer()
 
-PATH_CORPUS = './assets/msmarco/passage_re_ranking/collection_cleaned.tsv'
+PATH_CORPUS = './assets/msmarco/passage_re_ranking/collection.tsv'
 # PATH_CORPUS = ("./assets/msmarco/passage_re_ranking/collection_sample.tsv") 
+# PATH_CORPUS = ("./assets/msmarco/passage_re_ranking/collection_sample_orig.tsv") 
 PATH_QUERIES = ("./assets/msmarco/passage_re_ranking/queries.dev.tsv")
 PATH_TOP1000 = "./assets/msmarco/passage_re_ranking/top1000.dev"
 
@@ -99,7 +101,8 @@ def timing(description: str) -> None:
 
 
 def tokenize_corpus(path: Path) -> pd.DataFrame:
-    corpus_df = pd.read_csv(path, sep="\t", header=None, names=["pid", "passage"], encoding='utf-8')
+    corpus_df = pd.read_csv(path, sep="\t", header=None, names=["pid", "passage"], encoding='utf8', dtype={"pid": "int64", "passage": "string"})
+    corpus_df["passage"] = corpus_df["passage"].apply(ftfy.fix_text) # fix unicode errors
     corpus_df["preprocessed_passage"] = corpus_df["passage"].apply(word_tokenize)
     corpus_df["preprocessed_passage"] = corpus_df["preprocessed_passage"].apply(
         lambda x: [word for word in x if word.isalnum()]
@@ -115,7 +118,7 @@ def tokenize_corpus(path: Path) -> pd.DataFrame:
 
 
 def tokenize_queries(path: Path) -> pd.DataFrame:
-    queries_df = pd.read_csv(path, sep="\t", header=None, names=["qid", "query"])
+    queries_df = pd.read_csv(path, sep="\t", header=None, names=["qid", "query"], encoding='utf8')
     queries_df["preprocessed_query"] = queries_df["query"].apply(word_tokenize)
     queries_df["preprocessed_query"] = queries_df["preprocessed_query"].apply(
         lambda x: [word for word in x if word.isalnum()]
