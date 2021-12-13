@@ -46,7 +46,7 @@ parser.add_argument(
     "--size",
     type=int,
     dest="size",
-    default=100,
+    default=10000,
     help="Size of the generated dataset.",
 )
 parser.add_argument(
@@ -54,7 +54,7 @@ parser.add_argument(
     "--max_samples_per_query",
     type=int,
     dest="max_samples_per_query",
-    default=1000,
+    default=5,
     help="Determines the maximumn number of passage samples with the same query in the generated dataset.",
 )
 parser.add_argument(
