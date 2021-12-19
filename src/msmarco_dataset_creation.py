@@ -296,7 +296,7 @@ def bm25_dataset_creation(
     output_filename: str,
 ) -> None:
     pool = corpus_df["passage"].to_dict()
-    if requests.get(f"192.168.1.80:9206/_search").status_code == 200:
+    if requests.get(f"http://192.168.1.80:9206/_search").status_code == 200:
         print('success')
     bm25 = ElasticSearchBM25(
         pool, host="192.168.1.80", port_http="9206", port_tcp="9206"
