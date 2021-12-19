@@ -50,8 +50,9 @@ class ElasticSearchBM25(object):
     ):
         self._wait_and_check(host, port_http, suffix, max_waiting)
         logger.info(f'Successfully reached out to ES service at {host}:{port_http}')
-            
-        es = Elasticsearch(['http://{host}:{port_http}/{suffix}'], timeout=timeout)
+        url = 'http://{host}:{port_http}/{suffix}'
+        print(url)
+        es = Elasticsearch([url], timeout=timeout)
         logger.info(f'Successfully built connection to ES service at {host}:{port_http}')
         self.es = es
         if es.indices.exists(index=index_name):
