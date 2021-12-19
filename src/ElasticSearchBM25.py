@@ -55,13 +55,14 @@ class ElasticSearchBM25(object):
         es = Elasticsearch([url], timeout=timeout)
         logger.info(f'Successfully built connection to ES service at {host}:{port_http}')
         self.es = es
-        if es.indices.exists(index=index_name):
-            if reindexing:
-                logger.info(f'Index {index_name} found and it will be indexed again since reindexing=True')
-                es.indices.delete(index=index_name)
-        else:
-            logger.info(f'No index found and now do indexing')
-            self._index_corpus(corpus, index_name)
+        # if es.indices.exists(index=index_name):
+        #     if reindexing:
+        #         logger.info(f'Index {index_name} found and it will be indexed again since reindexing=True')
+        #         es.indices.delete(index=index_name)
+        # else:
+        #     logger.info(f'No index found and now do indexing')
+        #     self._index_corpus(corpus, index_name)
+        self._index_corpus(corpus, index_name)
         self.index_name = index_name
         logger.info('All set up.')
 
