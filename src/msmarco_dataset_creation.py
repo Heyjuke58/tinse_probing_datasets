@@ -21,7 +21,7 @@ import json
 import pandas as pd
 import numpy as np
 from pandas.core.frame import DataFrame
-from easy_elasticsearch import ElasticSearchBM25
+from ElasticSearchBM25 import ElasticSearchBM25
 
 # set visible devices to -1 since no gpu is needed
 import os
@@ -299,7 +299,7 @@ def bm25_dataset_creation(
     if requests.get(f"http://192.168.1.80:9206/_search").status_code == 200:
         print('success')
     bm25 = ElasticSearchBM25(
-        pool, host="192.168.1.80", port_http="9206", port_tcp="9206"
+        pool, host="192.168.1.80", port_http="9206", suffix="_search"
     )
 
     # free memory
