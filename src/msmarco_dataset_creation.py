@@ -2,6 +2,7 @@ import en_core_web_sm
 from collections import Counter
 from spacy import displacy
 import spacy
+import requests
 import logging
 from nltk import data, download
 from nltk.corpus import stopwords
@@ -295,6 +296,8 @@ def bm25_dataset_creation(
     output_filename: str,
 ) -> None:
     pool = corpus_df["passage"].to_dict()
+    if requests.get(f"192.168.1.80:9206/_search").status_code == 200:
+        print('success')
     bm25 = ElasticSearchBM25(
         pool, host="192.168.1.80", port_http="9206", port_tcp="9206"
     )
