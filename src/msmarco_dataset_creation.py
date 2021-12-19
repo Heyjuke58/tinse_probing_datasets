@@ -299,7 +299,7 @@ def bm25_dataset_creation(
     if requests.get(f"http://192.168.1.80:9206/_search").status_code == 200:
         print('success')
     bm25 = ElasticSearchBM25(
-        pool, host="192.168.1.80", port_http="9206", suffix="_search"
+        pool, host="192.168.1.80", port_http="9206", suffix="_search", index_name="msmarco_tinse"
     )
 
     # free memory
