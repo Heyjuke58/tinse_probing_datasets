@@ -307,8 +307,6 @@ def bm25_dataset_creation(
     bm25 = ElasticSearchBM25(
         pool,
         index_name=f"{source}_bm25",
-        port_http="9206",
-        port_tcp="9207",
         service_type="docker",
     )
 
