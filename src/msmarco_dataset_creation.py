@@ -308,7 +308,7 @@ def bm25_dataset_creation(
         pool,
         index_name=f"{source}_bm25",
         port_http="9206",
-        port_tcp="9206",
+        port_tcp="9207",
         service_type="docker",
     )
 
