@@ -308,6 +308,7 @@ def bm25_dataset_creation(
         pool,
         index_name=f"{source}_bm25",
         service_type="docker",
+        max_waiting=10
     )
 
     # free memory
