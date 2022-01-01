@@ -21,7 +21,7 @@ import json
 import pandas as pd
 import numpy as np
 from pandas.core.frame import DataFrame
-from easy_elasticsearch import ElasticSearchBM25
+from ElasticSearchBM25_docker import ElasticSearchBM25
 
 # from ElasticSearchBM25 import ElasticSearchBM25
 
@@ -45,6 +45,7 @@ PATH_TOP1000 = "./assets/msmarco/passage_re_ranking/top1000.dev"
 
 
 SRC_MS_MARCO = "msmarco passage re-ranking"
+INDEX_NAME = "msmarco" # TODO: make argument
 OUT_MS_MARCO = "msmarco_bm25_dataset.json"
 
 parser = argparse.ArgumentParser()
@@ -298,17 +299,12 @@ def bm25_dataset_creation(
     output_filename: str,
 ) -> None:
     pool = corpus_df["passage"].to_dict()
-    # if requests.get(f"http://192.168.1.80:9206/_search").status_code == 200:
-    #     print('success')
-    # bm25 = ElasticSearchBM25(
-    #     pool, host="192.168.1.80", port_http="9206", suffix="_search", index_name="msmarco_tinse"
-    # )
 
     bm25 = ElasticSearchBM25(
         pool,
-        index_name=f"{source}_bm25",
+        index_name=INDEX_NAME,
         service_type="docker",
-        max_waiting=10,
+        max_waiting=100,
         port_http="12735",
         es_version="7.16.2"
     )
@@ -317,11 +313,9 @@ def bm25_dataset_creation(
     del pool
     del corpus_df
 
-    # bm25 = BM25Okapi(list(corpus_df["preprocessed_passage"]))
-
     # calculate bm25 scores
     dataset_df["bm25"] = dataset_df.apply(
-        lambda x: bm25.score(x["preprocessed_query"], document_ids=[x["pid"]])[
+        lambda x: bm25.score(x["query"], document_ids=[x["pid"]])[
             x["pid"]
         ],
         axis=1,
