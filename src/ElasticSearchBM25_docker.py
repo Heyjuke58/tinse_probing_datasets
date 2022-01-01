@@ -114,9 +114,10 @@ class ElasticSearchBM25(object):
         host = 'http://localhost'
         assert os.system('docker') == 0, 'Cannot run docker! Please make sure docker has been installed correctly.'
         container_name = f'easy-elasticsearch-node{int(time.time())}'
-        cmd = f'docker run -p {port_http}:9200 -p {port_tcp}:9300 -e "discovery.type=single-node" --detach ' + \
-            f'--name {container_name} docker.elastic.co/elasticsearch/elasticsearch:{es_version} ' + \
-            f'-v custom_elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml'
+        cmd = f'docker run -p {port_http}:9200 -p {port_tcp}:9300 -e "discovery.type=single-node" ' + \
+            f'--volume {os.getcwd()}/custom_elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml ' + \
+             '--detach ' + \
+            f'--name {container_name} docker.elastic.co/elasticsearch/elasticsearch:{es_version}'
         logger.info(f'Running command: `{cmd}`')
         os.system(cmd)
         self._wait_and_check(host, port_http, max_waiting)
