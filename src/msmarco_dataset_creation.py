@@ -36,8 +36,8 @@ download("punkt")
 STOPWORDS = set(stopwords.words("english"))
 PORTER_STEMMER = PorterStemmer()
 
-# PATH_CORPUS = "./assets/msmarco/passage_re_ranking/collection.tsv"
-PATH_CORPUS = "./assets/msmarco/passage_re_ranking/collection_sample_orig.tsv"
+PATH_CORPUS = "./assets/msmarco/passage_re_ranking/collection.tsv"
+# PATH_CORPUS = "./assets/msmarco/passage_re_ranking/collection_sample_orig.tsv"
 PATH_QUERIES = "./assets/msmarco/passage_re_ranking/queries.dev.tsv"
 PATH_TOP1000 = "./assets/msmarco/passage_re_ranking/top1000.dev"
 
@@ -318,6 +318,8 @@ def bm25_dataset_creation(
         ],
         axis=1,
     )
+
+    bm25.delete_container()
 
     dataset_dict = encode_bm25_dataset_to_json(dataset_df, source)
 
