@@ -43,7 +43,7 @@ PATH_TOP1000 = "./assets/msmarco/passage_re_ranking/top1000.dev"
 
 
 SRC_MS_MARCO = "msmarco passage re-ranking"
-INDEX_NAME = "msmarco" # TODO: make argument
+INDEX_NAME = "msmarco2" # TODO: make argument
 OUT_MS_MARCO = "msmarco_bm25_dataset.json"
 
 parser = argparse.ArgumentParser()
