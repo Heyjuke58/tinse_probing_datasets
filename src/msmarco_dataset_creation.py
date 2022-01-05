@@ -21,9 +21,7 @@ import json
 import pandas as pd
 import numpy as np
 from pandas.core.frame import DataFrame
-from ElasticSearchBM25_docker import ElasticSearchBM25
-
-# from ElasticSearchBM25 import ElasticSearchBM25
+from ElasticSearchBM25 import ElasticSearchBM25
 
 # set visible devices to -1 since no gpu is needed
 import os
