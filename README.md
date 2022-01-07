@@ -1,7 +1,50 @@
 # tinse_probing_datasets
 Script(s) to generate datasets for probing tasks of BERT (project TINSE)
 
-## Useful commands
+
+
+## Setup
+TODO
+
+
+***
+
+## Usage
+
+```conda activate tinse```
+
+### Creating datasets
+
+Example script run, which creates datasets (in /datasets) for all tasks for one specified source dataset (e.g. msmarco)
+
+```python src/msmarco_dataset_creation.py -s 10000 -sq 5 -src msmarco```
+
+####Options
+| Option      | Description | Default  |
+| ----------- | ----------- | ----------- |
+| -s, --size      | Size of the generated dataset(s) | 10000|
+| -sq, --samples_per_query   | Determines the maximumn number of passage samples with the same query in the generated dataset         |  5 |
+| -src, --source   | Source Dataset  | msmarco |
+
+.. to be continued
+
+### Get dataset splits
+
+TODO
+
+***
+
+## Directory Contents
+
+### assets
+source datasets (msmarco, trec, etc.)
+
+### datasets
+generated datasets in json format
+
+***
+
+## Other useful commands
 
 #### Run script on server:
 ```tmux```
@@ -16,3 +59,6 @@ To reattach to tmux session:
 #### Get large files from google drive:
 
 ```gdown https://drive.google.com/uc?id=<file_id>```
+
+Problem:
+Kein PUT Access um neuen Index zu erstellen

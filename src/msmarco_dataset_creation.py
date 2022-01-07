@@ -52,15 +52,15 @@ parser.add_argument(
     "--size",
     type=int,
     dest="size",
-    default=10,
+    default=10000,
     help="Size of the generated dataset.",
 )
 parser.add_argument(
     "-sq",
-    "--max_samples_per_query",
+    "--samples_per_query",
     type=int,
-    dest="max_samples_per_query",
-    default=100,
+    dest="samples_per_query",
+    default=5,
     help="Determines the maximumn number of passage samples with the same query in the generated dataset.",
 )
 parser.add_argument(
@@ -69,7 +69,7 @@ parser.add_argument(
     type=str,
     dest="path_corpus",
     default=PATH_CORPUS,
-    help="path to the corpus file",
+    help="Path to the corpus file",
 )
 parser.add_argument(
     "-pq",
@@ -85,7 +85,7 @@ parser.add_argument(
     type=str,
     dest="source",
     default=SRC_MS_MARCO,
-    help="source to add in the info of the dataset",
+    help="Source to add in the info of the dataset",
 )
 parser.add_argument(
     "-o",
@@ -173,7 +173,7 @@ def sample_queries_and_passages(
     query_df: pd.DataFrame,
     q_p_top1000: Dict[int, List[int]],
     size: int,
-    max_samples_per_query: int,
+    samples_per_query: int,
 ) -> pd.DataFrame:
     rand_queries = pd.DataFrame()
     rand_passages = pd.DataFrame()
@@ -183,8 +183,8 @@ def sample_queries_and_passages(
     for qid in sampled_queries:
         possible_passages = q_p_top1000[qid]
         sample_size = (
-            max_samples_per_query
-            if len(possible_passages) >= max_samples_per_query
+            samples_per_query
+            if len(possible_passages) >= samples_per_query
             else len(possible_passages)
         )
         sampled_passages = random.sample(possible_passages, sample_size)
@@ -214,7 +214,7 @@ def sample_queries_and_passages(
     # concat passages and queries dataframes
     passage_query_df = pd.concat([rand_passages, rand_queries], sort=False, axis=1)
     logging.info(
-        f"Dataset sample of size {size} with max samples per query of {max_samples_per_query} generated."
+        f"Dataset sample of size {size} with max samples per query of {samples_per_query} generated."
     )
 
     return passage_query_df
@@ -305,6 +305,7 @@ def bm25_dataset_creation(
         max_waiting=100,
         port_http="12735",
         es_version="7.16.2"
+        reindexing=False
     )
 
     # free memory
@@ -353,7 +354,7 @@ def sem_sim_dataset_creation(
 
 
 if __name__ == "__main__":
-    logging.basicConfig(filename="msmarco.log", filemode="w", level=logging.INFO)
+    logging.basicConfig(filename="msmarco.log", filemode="w+", level=logging.INFO)
 
     # preprocess corpus (passages) for bm25
     corpus_df = tokenize_corpus(Path(args.path_corpus))
@@ -363,7 +364,7 @@ if __name__ == "__main__":
     q_p_top1000_dict = get_top_1000_passages(PATH_TOP1000)
 
     dataset_df = sample_queries_and_passages(
-        corpus_df, query_df, q_p_top1000_dict, args.size, args.max_samples_per_query
+        corpus_df, query_df, q_p_top1000_dict, args.size, args.samples_per_query
     )
 
     # free memory
