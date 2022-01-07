@@ -17,13 +17,15 @@ TODO
 
 ```conda activate tinse```
 
+TODO
+
 ### Creating datasets
 
 Example script run, which creates datasets (in /datasets) for all tasks for one specified source dataset (e.g. msmarco)
 
 ```python src/msmarco_dataset_creation.py -s 10000 -sq 5 -src msmarco```
 
-####Options
+#### Options
 | Option      | Description | Default  |
 | ----------- | ----------- | ----------- |
 | -s, --size      | Size of the generated dataset(s) | 10000|
@@ -51,18 +53,15 @@ generated datasets in json format
 ## Other useful commands
 
 #### Run detached script on server:
-```tmux```
-run script
 
-To quit tmux session:
-Ctrl+b then d
+1. ```tmux```
 
-To reattach to tmux session:
-```tmux attach```
+2. run script
+
+3. To quit tmux session: <kbd>Ctrl</kbd> + <kbd>b</kbd> then <kbd>d</kbd>
+
+4. To reattach to tmux session: ```tmux attach```
 
 #### Get large files from google drive:
 
 ```gdown https://drive.google.com/uc?id=<file_id>```
-
-Problem:
-Kein PUT Access um neuen Index zu erstellen
