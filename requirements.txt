@@ -1,5 +1,4 @@
 pandas
-rank-bm25
 nltk
 spacy # to get en_core_web_sm: python -m spacy download en_core_web_sm
 ftfy

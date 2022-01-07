@@ -1,26 +1,20 @@
-import en_core_web_sm
-from collections import Counter
-from spacy import displacy
-import spacy
-import requests
+import argparse
 import logging
+import json
+import random
+from pathlib import Path
+from collections import defaultdict
+from typing import List, Dict, Tuple
+
+import pandas as pd
+import spacy
+from spacy import displacy
+import en_core_web_sm
 from nltk import data, download
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
 from nltk.stem import PorterStemmer
-from rank_bm25 import BM25Okapi
-from typing import List, Dict, Tuple
 import ftfy
-import random
-from collections import defaultdict
-from pathlib import Path
-import argparse
-from contextlib import contextmanager
-from time import perf_counter
-import json
-import pandas as pd
-import numpy as np
-from pandas.core.frame import DataFrame
 from easy_elasticsearch import ElasticSearchBM25
 
 # set visible devices to -1 since no gpu is needed
@@ -43,7 +37,7 @@ PATH_TOP1000 = "./assets/msmarco/passage_re_ranking/top1000.dev"
 
 
 SRC_MS_MARCO = "msmarco passage re-ranking"
-INDEX_NAME = "msmarco2" # TODO: make argument
+INDEX_NAME = "msmarco2"  # TODO: make argument
 OUT_MS_MARCO = "msmarco_bm25_dataset.json"
 
 parser = argparse.ArgumentParser()
@@ -96,14 +90,6 @@ parser.add_argument(
     help="Output filename of the generated dataset",
 )
 args = parser.parse_args()
-
-
-@contextmanager
-def timing(description: str) -> None:
-    start = perf_counter()
-    yield
-    ellapsed_time = perf_counter() - start
-    print(f"{description}: {ellapsed_time}")
 
 
 def tokenize_corpus(path: Path) -> pd.DataFrame:
@@ -163,7 +149,7 @@ def get_top_1000_passages(path: Path) -> Dict[int, List[int]]:
     return q_p_top1000_dict
 
 
-def set_new_index(df: DataFrame) -> DataFrame:
+def set_new_index(df: pd.DataFrame) -> pd.DataFrame:
     df["idx"] = pd.Int64Index(range(df.shape[0]))
     return df.set_index("idx")
 
@@ -220,7 +206,7 @@ def sample_queries_and_passages(
     return passage_query_df
 
 
-def encode_bm25_dataset_to_json(df: DataFrame, source: str) -> List[Dict]:
+def encode_bm25_dataset_to_json(df: pd.DataFrame, source: str) -> List[Dict]:
     dataset: List[Dict] = []
     for idx, row in df.iterrows():
         dataset.append(
@@ -241,7 +227,7 @@ def encode_bm25_dataset_to_json(df: DataFrame, source: str) -> List[Dict]:
 
 
 def encode_ner_dataset_to_json(
-    df: DataFrame, targets: Dict[int, List[Tuple[List, str]]], source: str
+    df: pd.DataFrame, targets: Dict[int, List[Tuple[List, str]]], source: str
 ) -> List[Dict]:
     dataset: List[Dict] = []
     for idx, row in df.iterrows():
@@ -265,7 +251,7 @@ def encode_ner_dataset_to_json(
     return dataset
 
 
-def encode_sem_sim_dataset_to_json(df: DataFrame, source: str) -> List[Dict]:
+def encode_sem_sim_dataset_to_json(df: pd.DataFrame, source: str) -> List[Dict]:
     dataset: List[Dict] = []
     for idx, row in df.iterrows():
         dataset.append(
@@ -304,8 +290,8 @@ def bm25_dataset_creation(
         service_type="docker",
         max_waiting=100,
         port_http="12735",
-        es_version="7.16.2"
-        reindexing=False
+        es_version="7.16.2",
+        reindexing=False,
     )
 
     # free memory
@@ -314,10 +300,7 @@ def bm25_dataset_creation(
 
     # calculate bm25 scores
     dataset_df["bm25"] = dataset_df.apply(
-        lambda x: bm25.score(x["query"], document_ids=[x["pid"]])[
-            x["pid"]
-        ],
-        axis=1,
+        lambda x: bm25.score(x["query"], document_ids=[x["pid"]])[x["pid"]], axis=1,
     )
 
     bm25.delete_container()

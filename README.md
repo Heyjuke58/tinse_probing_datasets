@@ -4,6 +4,10 @@ Script(s) to generate datasets for probing tasks of BERT (project TINSE)
 
 
 ## Setup
+
+1. ```conda create -n tinse python=3.8```
+
+python -m spacy download en_core_web_sm
 TODO
 
 
@@ -46,7 +50,7 @@ generated datasets in json format
 
 ## Other useful commands
 
-#### Run script on server:
+#### Run detached script on server:
 ```tmux```
 run script
 
