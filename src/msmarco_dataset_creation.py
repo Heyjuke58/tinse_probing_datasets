@@ -5,12 +5,13 @@ import random
 from pathlib import Path
 from collections import defaultdict
 from typing import List, Dict, Tuple
+import time
 
 import pandas as pd
 import spacy
 from spacy import displacy
 import en_core_web_sm
-from nltk import data, download
+from nltk import download
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
 from nltk.stem import PorterStemmer
@@ -30,15 +31,19 @@ download("punkt")
 STOPWORDS = set(stopwords.words("english"))
 PORTER_STEMMER = PorterStemmer()
 
-PATH_CORPUS = "./assets/msmarco/passage_re_ranking/collection.tsv"
-# PATH_CORPUS = "./assets/msmarco/passage_re_ranking/collection_sample_orig.tsv"
-PATH_QUERIES = "./assets/msmarco/passage_re_ranking/queries.dev.tsv"
-PATH_TOP1000 = "./assets/msmarco/passage_re_ranking/top1000.dev"
+SRC_MS_MARCO = {
+    "short": "msmarco",
+    "long": "msmarco passage re-ranking",
+    "index_name": "msmarco3",
+    "path_corpus": "./assets/msmarco/passage_re_ranking/collection_sample_orig.tsv",
+    # "path_corpus": "./assets/msmarco/passage_re_ranking/collection.tsv",
+    "path_queries": "./assets/msmarco/passage_re_ranking/queries.dev.tsv",
+    "path_top1000": "./assets/msmarco/passage_re_ranking/top1000.dev",
+}
 
+SRC_TREC = {}
 
-SRC_MS_MARCO = "msmarco passage re-ranking"
-INDEX_NAME = "msmarco2"  # TODO: make argument
-OUT_MS_MARCO = "msmarco_bm25_dataset.json"
+SRC_DATASETS = {"msmarco": SRC_MS_MARCO, "trec": SRC_TREC}
 
 parser = argparse.ArgumentParser()
 parser.add_argument(
@@ -58,36 +63,12 @@ parser.add_argument(
     help="Determines the maximumn number of passage samples with the same query in the generated dataset.",
 )
 parser.add_argument(
-    "-pc",
-    "--path_corpus",
-    type=str,
-    dest="path_corpus",
-    default=PATH_CORPUS,
-    help="Path to the corpus file",
-)
-parser.add_argument(
-    "-pq",
-    "--path_queires",
-    type=str,
-    dest="path_queries",
-    default=PATH_QUERIES,
-    help="path to the query file",
-)
-parser.add_argument(
     "-src",
     "--source",
     type=str,
     dest="source",
-    default=SRC_MS_MARCO,
+    default="msmarco",
     help="Source to add in the info of the dataset",
-)
-parser.add_argument(
-    "-o",
-    "--output",
-    type=str,
-    dest="output_filename",
-    default=OUT_MS_MARCO,
-    help="Output filename of the generated dataset",
 )
 args = parser.parse_args()
 
@@ -153,6 +134,8 @@ def set_new_index(df: pd.DataFrame) -> pd.DataFrame:
     df["idx"] = pd.Int64Index(range(df.shape[0]))
     return df.set_index("idx")
 
+def get_timestamp() -> str:
+    return time.strftime("%Y_%m_%d-%H-%M-%S")
 
 def sample_queries_and_passages(
     corpus_df: pd.DataFrame,
@@ -279,14 +262,15 @@ def write_dataset_to_file(path: Path, dataset) -> None:
 def bm25_dataset_creation(
     dataset_df: pd.DataFrame,
     corpus_df: pd.DataFrame,
+    size: int,
+    samples_per_query: int,
     source: str,
-    output_filename: str,
 ) -> None:
     pool = corpus_df["passage"].to_dict()
 
     bm25 = ElasticSearchBM25(
         pool,
-        index_name=INDEX_NAME,
+        index_name=SRC_DATASETS[source]["index_name"],
         service_type="docker",
         max_waiting=100,
         port_http="12735",
@@ -305,14 +289,18 @@ def bm25_dataset_creation(
 
     bm25.delete_container()
 
-    dataset_dict = encode_bm25_dataset_to_json(dataset_df, source)
+    dataset_dict = encode_bm25_dataset_to_json(dataset_df, SRC_DATASETS[source]["long"])
+
+    output_filename = (
+        SRC_DATASETS[source]["short"] + f"_bm25_{size}_{samples_per_query}_{get_timestamp()}.json"
+    )
 
     write_dataset_to_file(Path("./datasets/") / output_filename, dataset_dict)
     logging.info(f"BM25 dataset saved to ./datasets/{output_filename}")
 
 
 def ner_dataset_creation(
-    dataset_df: pd.DataFrame, source: str, output_filename: str,
+    dataset_df: pd.DataFrame, size: int, samples_per_query: int, source: str,
 ) -> None:
     # key: pid, value: List[([start, end], label)]
     df_targets: Dict[int, List[Tuple[List, str]]] = {}
@@ -322,16 +310,28 @@ def ner_dataset_creation(
         new_targets = [([X.start, X.end], X.label_) for X in doc.ents]
         df_targets[row["pid"]] = new_targets
 
-    dataset_dict = encode_ner_dataset_to_json(dataset_df, df_targets, source)
+    dataset_dict = encode_ner_dataset_to_json(
+        dataset_df, df_targets, SRC_DATASETS[source]["long"]
+    )
+
+    output_filename = (
+        SRC_DATASETS[source]["short"] + f"_ner_{size}_{samples_per_query}_{get_timestamp()}.json"
+    )
+
     write_dataset_to_file(Path("./datasets") / output_filename, dataset_dict)
     logging.info(f"NER dataset saved to ./datasets/{output_filename}")
 
 
 def sem_sim_dataset_creation(
-    dataset_df: pd.DataFrame, source: str, output_filename: str,
+    dataset_df: pd.DataFrame, size: int, samples_per_query: int, source: str,
 ) -> None:
 
-    dataset_dict = encode_sem_sim_dataset_to_json(df, df_targets)
+    dataset_dict = encode_sem_sim_dataset_to_json(dataset_df)
+
+    output_filename = (
+        SRC_DATASETS[source]["short"] + f"_sem_sim_{size}_{samples_per_query}_{get_timestamp()}.json"
+    )
+
     write_dataset_to_file(Path("./dataset"), output_filename, dataset_dict)
     logging.info(f"Semantic similarity dataset saved to ./datasets/{output_filename}")
 
@@ -340,11 +340,11 @@ if __name__ == "__main__":
     logging.basicConfig(filename="msmarco.log", filemode="w+", level=logging.INFO)
 
     # preprocess corpus (passages) for bm25
-    corpus_df = tokenize_corpus(Path(args.path_corpus))
+    corpus_df = tokenize_corpus(Path(SRC_DATASETS[args.source]["path_corpus"]))
     # preprocess quueries for bm25
-    query_df = tokenize_queries(Path(args.path_queries))
+    query_df = tokenize_queries(Path(SRC_DATASETS[args.source]["path_queries"]))
     # dict query to relevant passages
-    q_p_top1000_dict = get_top_1000_passages(PATH_TOP1000)
+    q_p_top1000_dict = get_top_1000_passages(SRC_DATASETS[args.source]["path_top1000"])
 
     dataset_df = sample_queries_and_passages(
         corpus_df, query_df, q_p_top1000_dict, args.size, args.samples_per_query
@@ -354,7 +354,9 @@ if __name__ == "__main__":
     del query_df
     del q_p_top1000_dict
 
-    bm25_dataset_creation(dataset_df, corpus_df, args.source, args.output_filename)
+    bm25_dataset_creation(
+        dataset_df, corpus_df, args.size, args.samples_per_query, args.source
+    )
 
     # free memory
     del corpus_df
