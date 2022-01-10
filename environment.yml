@@ -107,6 +107,3 @@ dependencies:
   - xz=5.2.5=h7b6447c_0
   - yarl=1.6.3=py38h27cfd23_0
   - zlib=1.2.11=h7f8727e_4
-  - pip:
-    - easy-elasticsearch==0.0.7
-    - elasticsearch==7.12.1
