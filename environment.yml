@@ -27,6 +27,7 @@ dependencies:
   - cymem=2.0.5=py38h2531618_0
   - cython-blis=0.7.4=py38h27cfd23_1
   - dataclasses=0.8=pyh6d0b6a4_7
+  - elasticsearch=7.13.3=pyhd3eb1b0_0
   - frozenlist=1.2.0=py38h7f8727e_0
   - ftfy=5.8=py_0
   - google-api-core=1.25.1=pyhd3eb1b0_0
