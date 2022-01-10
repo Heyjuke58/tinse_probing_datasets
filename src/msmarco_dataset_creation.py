@@ -16,7 +16,7 @@ from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
 from nltk.stem import PorterStemmer
 import ftfy
-from easy_elasticsearch import ElasticSearchBM25
+from ElasticSearchBM25 import ElasticSearchBM25
 
 # set visible devices to -1 since no gpu is needed
 import os
