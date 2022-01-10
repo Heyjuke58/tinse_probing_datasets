@@ -6,10 +6,11 @@ from pathlib import Path
 from collections import defaultdict
 from typing import List, Dict, Tuple
 import time
+import os
 
 import pandas as pd
-import spacy
-from spacy import displacy
+import numpy as np
+from scipy import spatial
 import en_core_web_sm
 from nltk import download
 from nltk.corpus import stopwords
@@ -19,8 +20,6 @@ import ftfy
 from ElasticSearchBM25 import ElasticSearchBM25
 
 # set visible devices to -1 since no gpu is needed
-import os
-
 os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 
 ner_nlp = en_core_web_sm.load()
@@ -31,13 +30,16 @@ download("punkt")
 STOPWORDS = set(stopwords.words("english"))
 PORTER_STEMMER = PorterStemmer()
 
+SRC_PRETRAINED_GLOVE = "./assets/glove/glove.6B.300d.txt"
+
 SRC_MS_MARCO = {
     "short": "msmarco",
     "long": "msmarco passage re-ranking",
     "index_name": "msmarco3",
-    "path_corpus": "./assets/msmarco/passage_re_ranking/collection_sample_orig.tsv",
-    # "path_corpus": "./assets/msmarco/passage_re_ranking/collection.tsv",
+    # "path_corpus": "./assets/msmarco/passage_re_ranking/collection_sample_orig.tsv",
+    "path_corpus": "./assets/msmarco/passage_re_ranking/collection.tsv",
     "path_queries": "./assets/msmarco/passage_re_ranking/queries.dev.tsv",
+    # "path_queries": "./assets/msmarco/passage_re_ranking/queries.dev.small.tsv",
     "path_top1000": "./assets/msmarco/passage_re_ranking/top1000.dev",
 }
 
@@ -134,8 +136,10 @@ def set_new_index(df: pd.DataFrame) -> pd.DataFrame:
     df["idx"] = pd.Int64Index(range(df.shape[0]))
     return df.set_index("idx")
 
+
 def get_timestamp() -> str:
     return time.strftime("%Y_%m_%d-%H-%M-%S")
+
 
 def sample_queries_and_passages(
     corpus_df: pd.DataFrame,
@@ -187,6 +191,20 @@ def sample_queries_and_passages(
     )
 
     return passage_query_df
+
+
+def load_glove_model(glove_file: Path) -> np.ndarray:
+    logging.info("Loading Glove Model")
+    glove_model = {}
+    with open(glove_file, "r") as f:
+        for line in f:
+            split_line = line.split()
+            word = split_line[0]
+            embedding = np.array(split_line[1:], dtype=np.float64)
+            glove_model[word] = embedding
+    logging.info(f"{len(glove_model)} words loaded!")
+
+    return glove_model
 
 
 def encode_bm25_dataset_to_json(df: pd.DataFrame, source: str) -> List[Dict]:
@@ -254,23 +272,24 @@ def encode_sem_sim_dataset_to_json(df: pd.DataFrame, source: str) -> List[Dict]:
     return dataset
 
 
-def write_dataset_to_file(path: Path, dataset) -> None:
+def write_dataset_to_file(task: str, dataset) -> None:
+    output_filename = (
+        SRC_DATASETS[args.source]["short"]
+        + f"_{task}_{args.size}_{args.samples_per_query}_{get_timestamp()}.json"
+    )
+    path = Path("./datasets") / output_filename
     with open(path, "w", encoding="utf8") as outfile:
         json.dump(dataset, outfile, indent=4, ensure_ascii=False)
 
+    logging.info(f"{task} dataset saved to ./datasets/{output_filename}")
 
-def bm25_dataset_creation(
-    dataset_df: pd.DataFrame,
-    corpus_df: pd.DataFrame,
-    size: int,
-    samples_per_query: int,
-    source: str,
-) -> None:
+
+def bm25_dataset_creation(dataset_df: pd.DataFrame, corpus_df: pd.DataFrame) -> None:
     pool = corpus_df["passage"].to_dict()
 
     bm25 = ElasticSearchBM25(
         pool,
-        index_name=SRC_DATASETS[source]["index_name"],
+        index_name=SRC_DATASETS[args.source]["index_name"],
         service_type="docker",
         max_waiting=100,
         port_http="12735",
@@ -289,19 +308,14 @@ def bm25_dataset_creation(
 
     bm25.delete_container()
 
-    dataset_dict = encode_bm25_dataset_to_json(dataset_df, SRC_DATASETS[source]["long"])
-
-    output_filename = (
-        SRC_DATASETS[source]["short"] + f"_bm25_{size}_{samples_per_query}_{get_timestamp()}.json"
+    dataset_dict = encode_bm25_dataset_to_json(
+        dataset_df, SRC_DATASETS[args.source]["long"]
     )
 
-    write_dataset_to_file(Path("./datasets/") / output_filename, dataset_dict)
-    logging.info(f"BM25 dataset saved to ./datasets/{output_filename}")
+    write_dataset_to_file("bm25", dataset_dict)
 
 
-def ner_dataset_creation(
-    dataset_df: pd.DataFrame, size: int, samples_per_query: int, source: str,
-) -> None:
+def ner_dataset_creation(dataset_df: pd.DataFrame) -> None:
     # key: pid, value: List[([start, end], label)]
     df_targets: Dict[int, List[Tuple[List, str]]] = {}
 
@@ -311,29 +325,45 @@ def ner_dataset_creation(
         df_targets[row["pid"]] = new_targets
 
     dataset_dict = encode_ner_dataset_to_json(
-        dataset_df, df_targets, SRC_DATASETS[source]["long"]
+        dataset_df, df_targets, SRC_DATASETS[args.source]["long"]
     )
 
-    output_filename = (
-        SRC_DATASETS[source]["short"] + f"_ner_{size}_{samples_per_query}_{get_timestamp()}.json"
+    write_dataset_to_file("ner", dataset_dict)
+
+
+def sem_sim_dataset_creation(dataset_df: pd.DataFrame) -> None:
+    glove_model = load_glove_model(Path(SRC_PRETRAINED_GLOVE))
+    # get average embedding for cases when token is not present in glove model
+    avg_embedding = np.average(np.asarray(list(glove_model.values())), axis=0)
+
+    def calculate_cos_sim(passage: str, query: str) -> float:
+        doc = list(map(str.lower, word_tokenize(passage)))
+        query = list(map(str.lower, word_tokenize(query)))
+        g_e_doc = np.asarray(
+            [glove_model[x] if x in glove_model else avg_embedding for x in doc]
+        )
+        g_e_q = np.asarray(
+            [glove_model[x] if x in glove_model else avg_embedding for x in query]
+        )
+        cos_sim = np.zeros((g_e_doc.shape[0], g_e_q.shape[0]))
+        for i, doc_e in enumerate(g_e_doc):
+            for j, q_e in enumerate(g_e_q):
+                cos_sim[i][j] = 1 - spatial.distance.cosine(doc_e, q_e)
+
+        return np.average(cos_sim)
+
+    dataset_df["cos_sim"] = dataset_df.apply(
+        lambda x: calculate_cos_sim(x["passage"], x["query"]), axis=1
     )
 
-    write_dataset_to_file(Path("./datasets") / output_filename, dataset_dict)
-    logging.info(f"NER dataset saved to ./datasets/{output_filename}")
+    # free memory
+    del glove_model
 
-
-def sem_sim_dataset_creation(
-    dataset_df: pd.DataFrame, size: int, samples_per_query: int, source: str,
-) -> None:
-
-    dataset_dict = encode_sem_sim_dataset_to_json(dataset_df)
-
-    output_filename = (
-        SRC_DATASETS[source]["short"] + f"_sem_sim_{size}_{samples_per_query}_{get_timestamp()}.json"
+    dataset_dict = encode_sem_sim_dataset_to_json(
+        dataset_df, SRC_DATASETS[args.source]["long"]
     )
 
-    write_dataset_to_file(Path("./dataset"), output_filename, dataset_dict)
-    logging.info(f"Semantic similarity dataset saved to ./datasets/{output_filename}")
+    write_dataset_to_file("sem_sim", dataset_dict)
 
 
 if __name__ == "__main__":
@@ -354,12 +384,10 @@ if __name__ == "__main__":
     del query_df
     del q_p_top1000_dict
 
-    bm25_dataset_creation(
-        dataset_df, corpus_df, args.size, args.samples_per_query, args.source
-    )
+    bm25_dataset_creation(dataset_df, corpus_df)
 
     # free memory
     del corpus_df
 
-    # ner_dataset_creation(dataset_df, args.source, args.output_filename)
-    # sem_sim_dataset_creation(dataset_df, args.source, args.output_filename)
+    ner_dataset_creation(dataset_df)
+    sem_sim_dataset_creation(dataset_df)
