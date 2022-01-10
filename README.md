@@ -5,11 +5,22 @@ Script(s) to generate datasets for probing tasks of BERT (project TINSE)
 
 ## Setup
 
+Make sure you have access to the docker daemon.
+
+Either:
+
+1. ``conda env create -f environment.yml``
+2. ``conda activate tinse``
+
+Or:
+
 1. ```conda create -n tinse python=3.8```
+2. ```conda activate tinse```
+3. ```pip install -r requirements.txt```
 
-python -m spacy download en_core_web_sm
-TODO
+After that:
 
+``python -m spacy download en_core_web_sm``
 
 ***
 
@@ -22,6 +33,8 @@ TODO
 ### Creating datasets
 
 Example script run, which creates datasets (in /datasets) for all tasks for one specified source dataset (e.g. msmarco)
+
+Naming of Datasets: ``{source}_{task}_{size}_{samples_per_query}_{timestamp}.json``
 
 ```python src/msmarco_dataset_creation.py -s 10000 -sq 5 -src msmarco```
 
