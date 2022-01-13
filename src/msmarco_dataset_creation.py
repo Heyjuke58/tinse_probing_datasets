@@ -76,7 +76,7 @@ parser.add_argument(
     "-ph",
     "--port_http",
     type=str,
-    dest="source",
+    dest="port_http",
     default="12375",
     help="Http port for elasticsearch container",
 )
