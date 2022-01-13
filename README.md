@@ -44,8 +44,8 @@ Naming of Datasets: ``{source}_{task}_{size}_{samples_per_query}_{timestamp}.jso
 | -s, --size      | Size of the generated dataset(s) | 10000|
 | -sq, --samples_per_query   | Determines the maximumn number of passage samples with the same query in the generated dataset         |  5 |
 | -src, --source   | Source Dataset  | msmarco |
-
-.. to be continued
+| -ph, --port_http   | Http Port for elasticsearch container  | 12375 |
+| -pt, --port_tcp   | TCP Port for elasticsearch container  | 12376 |
 
 ### Get dataset splits
 

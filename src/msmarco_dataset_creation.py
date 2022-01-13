@@ -72,6 +72,22 @@ parser.add_argument(
     default="msmarco",
     help="Source to add in the info of the dataset",
 )
+parser.add_argument(
+    "-ph",
+    "--port_http",
+    type=str,
+    dest="source",
+    default="12375",
+    help="Http port for elasticsearch container",
+)
+parser.add_argument(
+    "-pt",
+    "--port_tcp",
+    type=str,
+    dest="port_tcp",
+    default="12376",
+    help="Tcp port for elasticsearch container",
+)
 args = parser.parse_args()
 
 
@@ -292,7 +308,8 @@ def bm25_dataset_creation(dataset_df: pd.DataFrame, corpus_df: pd.DataFrame) -> 
         index_name=SRC_DATASETS[args.source]["index_name"],
         service_type="docker",
         max_waiting=100,
-        port_http="12735",
+        port_http=args.port_http,
+        port_tcp=args.port_tcp,
         es_version="7.16.2",
         reindexing=False,
     )
