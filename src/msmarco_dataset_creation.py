@@ -252,7 +252,10 @@ def encode_bm25_dataset_to_json(df: pd.DataFrame, source: str) -> List[Dict]:
 
 
 def encode_ner_dataset_to_json(
-    df: pd.DataFrame, targets: Dict[int, List[Tuple[List, str]]], source: str
+    df: pd.DataFrame,
+    passage_targets: Dict[int, List[Tuple[List, str]]],
+    query_targets: Dict[int, List[Tuple[List, str]]],
+    source: str,
 ) -> List[Dict]:
     dataset: List[Dict] = []
     for idx, row in df.iterrows():
@@ -265,10 +268,16 @@ def encode_ner_dataset_to_json(
                 },
                 "text": row["query"] + " [SEP] " + row["passage"],
                 "input": {"passage": row["passage"], "query": row["query"]},
-                "targets": [
-                    {"span1": start_end, "label": label}
-                    for start_end, label in targets[row["pid"]]
-                ],
+                "targets": {
+                    "query": [
+                        {"span1": start_end, "label": label}
+                        for start_end, label in query_targets[row["qid"]]
+                    ],
+                    "passage": [
+                        {"span1": start_end, "label": label}
+                        for start_end, label in passage_targets[row["pid"]]
+                    ],
+                },
             }
         )
     logging.info("NER dataset encoded to json.")
@@ -342,15 +351,19 @@ def bm25_dataset_creation(dataset_df: pd.DataFrame, corpus_df: pd.DataFrame) -> 
 
 def ner_dataset_creation(dataset_df: pd.DataFrame) -> None:
     # key: pid, value: List[([start, end], label)]
-    df_targets: Dict[int, List[Tuple[List, str]]] = {}
+    passage_targets: Dict[int, List[Tuple[List, str]]] = {}
+    query_targets: Dict[int, List[Tuple[List, str]]] = {}
 
     for idx, row in dataset_df.iterrows():
         doc = ner_nlp(row["passage"])
-        new_targets = [([X.start, X.end], X.label_) for X in doc.ents]
-        df_targets[row["pid"]] = new_targets
+        query = ner_nlp(row["query"])
+        new_targets_doc = [([X.start, X.end], X.label_) for X in doc.ents]
+        new_targets_query = [([X.start, X.end], X.label_) for X in query.ents]
+        passage_targets[row["pid"]] = new_targets_doc
+        query_targets[row["qid"]] = new_targets_query
 
     dataset_dict = encode_ner_dataset_to_json(
-        dataset_df, df_targets, SRC_DATASETS[args.source]["long"]
+        dataset_df, passage_targets, query_targets, SRC_DATASETS[args.source]["long"]
     )
 
     write_dataset_to_file("ner", dataset_dict)
