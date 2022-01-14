@@ -99,6 +99,22 @@ parser.add_argument(
 args = parser.parse_args()
 
 
+def preprocess(string: str) -> List[str]:
+    """Tokenize string, remove stopwords, stemming
+
+    Args:
+        string (str): The text to preprocess
+
+    Returns:
+        List[str]: The resulting list of tokens
+    """
+    x = word_tokenize(string)
+    x = [word for word in x if word.isalnum()]
+    x = [word for word in x if not word in STOPWORDS]
+    x = [PORTER_STEMMER.stem(word) for word in x]
+    return x
+
+
 def tokenize_corpus(path: Path) -> pd.DataFrame:
     corpus_df = pd.read_csv(
         path,
@@ -129,16 +145,18 @@ def tokenize_queries(path: Path) -> pd.DataFrame:
     queries_df = pd.read_csv(
         path, sep="\t", header=None, names=["qid", "query"], encoding="utf8"
     )
-    queries_df["preprocessed_query"] = queries_df["query"].apply(word_tokenize)
-    queries_df["preprocessed_query"] = queries_df["preprocessed_query"].apply(
-        lambda x: [word for word in x if word.isalnum()]
-    )
-    queries_df["preprocessed_query"] = queries_df["preprocessed_query"].apply(
-        lambda x: [word for word in x if not word in STOPWORDS]
-    )
-    queries_df["preprocessed_query"] = queries_df["preprocessed_query"].apply(
-        lambda x: [PORTER_STEMMER.stem(word) for word in x]
-    )
+    # fix unicode errors
+    queries_df["query"] = queries_df["query"].apply(ftfy.fix_text)
+    # queries_df["preprocessed_query"] = queries_df["query"].apply(word_tokenize)
+    # queries_df["preprocessed_query"] = queries_df["preprocessed_query"].apply(
+    #     lambda x: [word for word in x if word.isalnum()]
+    # )
+    # queries_df["preprocessed_query"] = queries_df["preprocessed_query"].apply(
+    #     lambda x: [word for word in x if not word in STOPWORDS]
+    # )
+    # queries_df["preprocessed_query"] = queries_df["preprocessed_query"].apply(
+    #     lambda x: [PORTER_STEMMER.stem(word) for word in x]
+    # )
     logging.info("Queries preprocessed.")
 
     return queries_df
@@ -251,11 +269,28 @@ def encode_bm25_dataset_to_json(df: pd.DataFrame, source: str) -> List[Dict]:
     return dataset
 
 
+def encode_tf_dataset_to_json(df: pd.DataFrame, source: str) -> List[Dict]:
+    dataset: List[Dict] = []
+    for idx, row in df.iterrows():
+        dataset.append(
+            {
+                "info": {
+                    "pid": row["pid"],  # passage id
+                    "qid": row["qid"],  # query id
+                    "source": source,
+                },
+                "text": row["query"] + " [SEP] " + row["passage"],
+                "input": {"passage": row["passage"], "query": row["query"]},
+                "target": row["avg_tf"],
+            }
+        )
+    logging.info("TF dataset encoded to json.")
+
+    return dataset
+
+
 def encode_ner_dataset_to_json(
-    df: pd.DataFrame,
-    passage_targets: Dict[int, List[Tuple[List, str]]],
-    query_targets: Dict[int, List[Tuple[List, str]]],
-    source: str,
+    df: pd.DataFrame, targets: Dict[str, List[Tuple[List, str]]], source: str,
 ) -> List[Dict]:
     dataset: List[Dict] = []
     for idx, row in df.iterrows():
@@ -268,16 +303,12 @@ def encode_ner_dataset_to_json(
                 },
                 "text": row["query"] + " [SEP] " + row["passage"],
                 "input": {"passage": row["passage"], "query": row["query"]},
-                "targets": {
-                    "query": [
-                        {"span1": start_end, "label": label}
-                        for start_end, label in query_targets[row["qid"]]
-                    ],
-                    "passage": [
-                        {"span1": start_end, "label": label}
-                        for start_end, label in passage_targets[row["pid"]]
-                    ],
-                },
+                "targets": [
+                    {"span1": start_end, "label": label}
+                    for start_end, label in targets[
+                        str(row["pid"]) + " " + str(row["qid"])
+                    ]
+                ],
             }
         )
     logging.info("NER dataset encoded to json.")
@@ -349,21 +380,35 @@ def bm25_dataset_creation(dataset_df: pd.DataFrame, corpus_df: pd.DataFrame) -> 
     write_dataset_to_file("bm25", dataset_dict)
 
 
+def tf_dataset_creation(dataset_df: pd.DataFrame) -> None:
+    def calculate_tf(query: str, passage: str) -> float:
+        pp = preprocess(passage)
+        pq = preprocess(query)
+        return np.average([len([tk for tk in pp if tk == token]) / len(pp) for token in pq])
+
+    dataset_df["avg_tf"] = dataset_df.apply(
+        lambda x: calculate_tf(x["query"], x["passage"]),
+        axis=1,
+    )
+
+    dataset_dict = encode_tf_dataset_to_json(
+        dataset_df, SRC_DATASETS[args.source]["long"]
+    )
+
+    write_dataset_to_file("tf", dataset_dict)
+
+
 def ner_dataset_creation(dataset_df: pd.DataFrame) -> None:
     # key: pid, value: List[([start, end], label)]
-    passage_targets: Dict[int, List[Tuple[List, str]]] = {}
-    query_targets: Dict[int, List[Tuple[List, str]]] = {}
+    targets: Dict[str, List[Tuple[List, str]]] = {}
 
     for idx, row in dataset_df.iterrows():
-        doc = ner_nlp(row["passage"])
-        query = ner_nlp(row["query"])
+        doc = ner_nlp(row["query"] + " " + row["passage"])
         new_targets_doc = [([X.start, X.end], X.label_) for X in doc.ents]
-        new_targets_query = [([X.start, X.end], X.label_) for X in query.ents]
-        passage_targets[row["pid"]] = new_targets_doc
-        query_targets[row["qid"]] = new_targets_query
+        targets[str(row["pid"]) + " " + str(row["qid"])] = new_targets_doc
 
     dataset_dict = encode_ner_dataset_to_json(
-        dataset_df, passage_targets, query_targets, SRC_DATASETS[args.source]["long"]
+        dataset_df, targets, SRC_DATASETS[args.source]["long"]
     )
 
     write_dataset_to_file("ner", dataset_dict)
@@ -427,6 +472,9 @@ if __name__ == "__main__":
 
     # free memory
     del corpus_df
+
+    if "tf" in args.tasks:
+        tf_dataset_creation(dataset_df)
 
     if "ner" in args.tasks:
         ner_dataset_creation(dataset_df)
