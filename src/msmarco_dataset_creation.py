@@ -88,6 +88,14 @@ parser.add_argument(
     default="12376",
     help="Tcp port for elasticsearch container",
 )
+parser.add_argument(
+    "-t",
+    "--tasks",
+    type=str,
+    dest="tasks",
+    default="bm25,semsim,ner",
+    help="Tasks to run. Possible tasks are: ['bm25', 'semsim', 'ner']. Should be comma seperated",
+)
 args = parser.parse_args()
 
 
@@ -401,10 +409,13 @@ if __name__ == "__main__":
     del query_df
     del q_p_top1000_dict
 
-    bm25_dataset_creation(dataset_df, corpus_df)
+    if "bm25" in args.tasks:
+        bm25_dataset_creation(dataset_df, corpus_df)
 
     # free memory
     del corpus_df
 
-    ner_dataset_creation(dataset_df)
-    sem_sim_dataset_creation(dataset_df)
+    if "ner" in args.tasks:
+        ner_dataset_creation(dataset_df)
+    if "semsim" in args.tasks:
+        sem_sim_dataset_creation(dataset_df)
