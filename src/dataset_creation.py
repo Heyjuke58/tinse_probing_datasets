@@ -5,7 +5,6 @@ import random
 from pathlib import Path
 from collections import defaultdict
 from typing import List, Dict, Tuple
-import time
 import os
 
 import pandas as pd
@@ -18,6 +17,7 @@ from nltk.tokenize import word_tokenize
 from nltk.stem import PorterStemmer
 import ftfy
 from ElasticSearchBM25 import ElasticSearchBM25
+from utils import get_timestamp, set_new_index
 
 # set visible devices to -1 since no gpu is needed
 os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
@@ -49,12 +49,7 @@ SRC_DATASETS = {"msmarco": SRC_MS_MARCO, "trec": SRC_TREC}
 
 parser = argparse.ArgumentParser()
 parser.add_argument(
-    "-s",
-    "--size",
-    type=int,
-    dest="size",
-    default=10000,
-    help="Size of the generated dataset.",
+    "-s", "--size", type=int, dest="size", default=10000, help="Size of the generated dataset.",
 )
 parser.add_argument(
     "-sq",
@@ -93,8 +88,18 @@ parser.add_argument(
     "--tasks",
     type=str,
     dest="tasks",
-    default="bm25,semsim,ner",
+    default="bm25,semsim,ner,tf",
     help="Tasks to run. Possible tasks are: ['bm25', 'semsim', 'ner']. Should be comma seperated",
+)
+parser.add_argument(
+    "-sp",
+    "--sample_path",
+    type=str,
+    dest="sample_path",
+    default=None,
+    help="""Reuse an existing sample of a dataset. You need to specify the name of the file in ./datasets/samples/.
+        Every time a dataset is newly sampled it is saved in csv format. Naming format: {src}_{size}_{samples per query}_{timestamp}.csv
+        If set --size and --samples_per_query are ignored.""",
 )
 args = parser.parse_args()
 
@@ -115,7 +120,7 @@ def preprocess(string: str) -> List[str]:
     return x
 
 
-def tokenize_corpus(path: Path) -> pd.DataFrame:
+def get_corpus(path: Path) -> pd.DataFrame:
     corpus_df = pd.read_csv(
         path,
         sep="\t",
@@ -126,37 +131,15 @@ def tokenize_corpus(path: Path) -> pd.DataFrame:
     )
     # fix unicode errors
     corpus_df["passage"] = corpus_df["passage"].apply(ftfy.fix_text)
-    # corpus_df["preprocessed_passage"] = corpus_df["passage"].apply(word_tokenize)
-    # corpus_df["preprocessed_passage"] = corpus_df["preprocessed_passage"].apply(
-    #     lambda x: [word for word in x if word.isalnum()]
-    # )
-    # corpus_df["preprocessed_passage"] = corpus_df["preprocessed_passage"].apply(
-    #     lambda x: [word for word in x if not word in STOPWORDS]
-    # )
-    # corpus_df["preprocessed_passage"] = corpus_df["preprocessed_passage"].apply(
-    #     lambda x: [PORTER_STEMMER.stem(word) for word in x]
-    # )
     logging.info("Corpus preprocessed.")
 
     return corpus_df
 
 
-def tokenize_queries(path: Path) -> pd.DataFrame:
-    queries_df = pd.read_csv(
-        path, sep="\t", header=None, names=["qid", "query"], encoding="utf8"
-    )
+def get_queries(path: Path) -> pd.DataFrame:
+    queries_df = pd.read_csv(path, sep="\t", header=None, names=["qid", "query"], encoding="utf8")
     # fix unicode errors
     queries_df["query"] = queries_df["query"].apply(ftfy.fix_text)
-    # queries_df["preprocessed_query"] = queries_df["query"].apply(word_tokenize)
-    # queries_df["preprocessed_query"] = queries_df["preprocessed_query"].apply(
-    #     lambda x: [word for word in x if word.isalnum()]
-    # )
-    # queries_df["preprocessed_query"] = queries_df["preprocessed_query"].apply(
-    #     lambda x: [word for word in x if not word in STOPWORDS]
-    # )
-    # queries_df["preprocessed_query"] = queries_df["preprocessed_query"].apply(
-    #     lambda x: [PORTER_STEMMER.stem(word) for word in x]
-    # )
     logging.info("Queries preprocessed.")
 
     return queries_df
@@ -174,13 +157,22 @@ def get_top_1000_passages(path: Path) -> Dict[int, List[int]]:
     return q_p_top1000_dict
 
 
-def set_new_index(df: pd.DataFrame) -> pd.DataFrame:
-    df["idx"] = pd.Int64Index(range(df.shape[0]))
-    return df.set_index("idx")
+def get_dataset_from_existing_sample(
+    corpus_df: pd.DataFrame, query_df: pd.DataFrame, sample_path: Path
+) -> pd.DataFrame:
+    try:
+        passage_query_df = pd.read_csv(sample_path, sep=",")
+    except FileNotFoundError:
+        logging.error(f"File {sample_path} you are trying to load the sample from does not exist.")
+        return
+    passage_query_df["query"] = passage_query_df.apply(
+        lambda x: query_df.loc[query_df["qid"] == x["qid"]]["query"].values[0], axis=1
+    )
+    passage_query_df["passage"] = passage_query_df.apply(
+        lambda x: corpus_df.loc[corpus_df["pid"] == x["pid"]]["passage"].values[0], axis=1
+    )
 
-
-def get_timestamp() -> str:
-    return time.strftime("%Y_%m_%d-%H-%M-%S")
+    return passage_query_df
 
 
 def sample_queries_and_passages(
@@ -189,6 +181,7 @@ def sample_queries_and_passages(
     q_p_top1000: Dict[int, List[int]],
     size: int,
     samples_per_query: int,
+    save_sample: bool = True,
 ) -> pd.DataFrame:
     rand_queries = pd.DataFrame()
     rand_passages = pd.DataFrame()
@@ -203,14 +196,11 @@ def sample_queries_and_passages(
             else len(possible_passages)
         )
         sampled_passages = random.sample(possible_passages, sample_size)
-        preprocessed_sampled_passages = corpus_df.loc[
-            corpus_df["pid"].isin(sampled_passages)
-        ]
+        preprocessed_sampled_passages = corpus_df.loc[corpus_df["pid"].isin(sampled_passages)]
         rand_passages = rand_passages.append(preprocessed_sampled_passages)
         preprocessed_sampled_queries = query_df.loc[query_df["qid"] == qid]
         rand_queries = rand_queries.append(
-            [preprocessed_sampled_queries] * len(preprocessed_sampled_passages),
-            ignore_index=True,
+            [preprocessed_sampled_queries] * len(preprocessed_sampled_passages), ignore_index=True,
         )
 
         if len(rand_passages) >= size:
@@ -231,6 +221,16 @@ def sample_queries_and_passages(
     logging.info(
         f"Dataset sample of size {size} with max samples per query of {samples_per_query} generated."
     )
+
+    if save_sample:
+        # Mkdir if it does not exist
+        Path("./datasets/samples").mkdir(parents=True, exist_ok=True)
+
+        # save sample
+        passage_query_df.to_csv(
+            f"./datasets/samples/{SRC_DATASETS[args.source]['short']}_{size}_{samples_per_query}_{get_timestamp()}.csv",
+            columns=["qid", "pid"],
+        )
 
     return passage_query_df
 
@@ -305,9 +305,7 @@ def encode_ner_dataset_to_json(
                 "input": {"passage": row["passage"], "query": row["query"]},
                 "targets": [
                     {"span1": start_end, "label": label}
-                    for start_end, label in targets[
-                        str(row["pid"]) + " " + str(row["qid"])
-                    ]
+                    for start_end, label in targets[str(row["pid"]) + " " + str(row["qid"])]
                 ],
             }
         )
@@ -373,9 +371,7 @@ def bm25_dataset_creation(dataset_df: pd.DataFrame, corpus_df: pd.DataFrame) -> 
 
     bm25.delete_container()
 
-    dataset_dict = encode_bm25_dataset_to_json(
-        dataset_df, SRC_DATASETS[args.source]["long"]
-    )
+    dataset_dict = encode_bm25_dataset_to_json(dataset_df, SRC_DATASETS[args.source]["long"])
 
     write_dataset_to_file("bm25", dataset_dict)
 
@@ -387,13 +383,10 @@ def tf_dataset_creation(dataset_df: pd.DataFrame) -> None:
         return np.average([len([tk for tk in pp if tk == token]) / len(pp) for token in pq])
 
     dataset_df["avg_tf"] = dataset_df.apply(
-        lambda x: calculate_tf(x["query"], x["passage"]),
-        axis=1,
+        lambda x: calculate_tf(x["query"], x["passage"]), axis=1,
     )
 
-    dataset_dict = encode_tf_dataset_to_json(
-        dataset_df, SRC_DATASETS[args.source]["long"]
-    )
+    dataset_dict = encode_tf_dataset_to_json(dataset_df, SRC_DATASETS[args.source]["long"])
 
     write_dataset_to_file("tf", dataset_dict)
 
@@ -402,7 +395,7 @@ def ner_dataset_creation(dataset_df: pd.DataFrame) -> None:
     # key: pid, value: List[([start, end], label)]
     targets: Dict[str, List[Tuple[List, str]]] = {}
 
-    for idx, row in dataset_df.iterrows():
+    for _, row in dataset_df.iterrows():
         doc = ner_nlp(row["query"] + " " + row["passage"])
         new_targets_doc = [([X.start, X.end], X.label_) for X in doc.ents]
         targets[str(row["pid"]) + " " + str(row["qid"])] = new_targets_doc
@@ -422,12 +415,8 @@ def sem_sim_dataset_creation(dataset_df: pd.DataFrame) -> None:
     def calculate_cos_sim(passage: str, query: str) -> float:
         doc = list(map(str.lower, word_tokenize(passage)))
         query = list(map(str.lower, word_tokenize(query)))
-        g_e_doc = np.asarray(
-            [glove_model[x] if x in glove_model else avg_embedding for x in doc]
-        )
-        g_e_q = np.asarray(
-            [glove_model[x] if x in glove_model else avg_embedding for x in query]
-        )
+        g_e_doc = np.asarray([glove_model[x] if x in glove_model else avg_embedding for x in doc])
+        g_e_q = np.asarray([glove_model[x] if x in glove_model else avg_embedding for x in query])
         cos_sim = np.zeros((g_e_doc.shape[0], g_e_q.shape[0]))
         for i, doc_e in enumerate(g_e_doc):
             for j, q_e in enumerate(g_e_q):
@@ -442,35 +431,38 @@ def sem_sim_dataset_creation(dataset_df: pd.DataFrame) -> None:
     # free memory
     del glove_model
 
-    dataset_dict = encode_sem_sim_dataset_to_json(
-        dataset_df, SRC_DATASETS[args.source]["long"]
-    )
+    dataset_dict = encode_sem_sim_dataset_to_json(dataset_df, SRC_DATASETS[args.source]["long"])
 
     write_dataset_to_file("sem_sim", dataset_dict)
 
 
-if __name__ == "__main__":
+def main():
     logging.basicConfig(filename="msmarco.log", filemode="w+", level=logging.INFO)
 
-    # preprocess corpus (passages) for bm25
-    corpus_df = tokenize_corpus(Path(SRC_DATASETS[args.source]["path_corpus"]))
-    # preprocess quueries for bm25
-    query_df = tokenize_queries(Path(SRC_DATASETS[args.source]["path_queries"]))
-    # dict query to relevant passages
-    q_p_top1000_dict = get_top_1000_passages(SRC_DATASETS[args.source]["path_top1000"])
+    # get corpus (passages) for bm25
+    corpus_df = get_corpus(Path(SRC_DATASETS[args.source]["path_corpus"]))
+    # get quueries for bm25
+    query_df = get_queries(Path(SRC_DATASETS[args.source]["path_queries"]))
 
-    dataset_df = sample_queries_and_passages(
-        corpus_df, query_df, q_p_top1000_dict, args.size, args.samples_per_query
-    )
+    # decide whether to construct datset from existing sample or sample passages and queries newly
+    if args.sample_path is not None:
+        dataset_df = get_dataset_from_existing_sample(
+            corpus_df, query_df, Path("./datasets/samples") / args.sample_path
+        )
+    else:
+        # dict query to relevant passages
+        q_p_top1000_dict = get_top_1000_passages(SRC_DATASETS[args.source]["path_top1000"])
+        dataset_df = sample_queries_and_passages(
+            corpus_df, query_df, q_p_top1000_dict, args.size, args.samples_per_query
+        )
 
-    # free memory
+        del q_p_top1000_dict
+
     del query_df
-    del q_p_top1000_dict
 
     if "bm25" in args.tasks:
         bm25_dataset_creation(dataset_df, corpus_df)
 
-    # free memory
     del corpus_df
 
     if "tf" in args.tasks:
@@ -480,3 +472,7 @@ if __name__ == "__main__":
         ner_dataset_creation(dataset_df)
     if "semsim" in args.tasks:
         sem_sim_dataset_creation(dataset_df)
+
+
+if __name__ == "__main__":
+    main()

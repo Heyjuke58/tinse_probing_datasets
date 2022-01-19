@@ -129,4 +129,5 @@ dmypy.json
 .pyre/
 
 datasets/
+assets/
 .vscode/
