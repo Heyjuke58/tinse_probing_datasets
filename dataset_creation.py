@@ -16,8 +16,9 @@ from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
 from nltk.stem import PorterStemmer
 import ftfy
-from ElasticSearchBM25 import ElasticSearchBM25
-from utils import get_timestamp, set_new_index
+from src.ElasticSearchBM25 import ElasticSearchBM25
+from src.utils import get_timestamp, set_new_index
+import ir_datasets
 
 # set visible devices to -1 since no gpu is needed
 os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
@@ -44,8 +45,9 @@ SRC_MS_MARCO = {
 }
 
 SRC_TREC = {}
+SRC_FEVER = {"dataset_path": "beir/fever/test"}
 
-SRC_DATASETS = {"msmarco": SRC_MS_MARCO, "trec": SRC_TREC}
+SRC_DATASETS = {"msmarco": SRC_MS_MARCO, "trec": SRC_TREC, "fever": SRC_FEVER}
 
 parser = argparse.ArgumentParser()
 parser.add_argument(
@@ -174,6 +176,24 @@ def get_dataset_from_existing_sample(
 
     return passage_query_df
 
+def get_dataset_from_existing_sample_ir(sample_path: Path) -> pd.DataFrame:
+    try:
+        passage_query_df = pd.read_csv(sample_path, seo=",")
+    except FileNotFoundError:
+        logging.error(f"File {sample_path} you are trying to load the sample from does not exist.")
+        return
+    fever = ir_datasets.load(SRC_DATASETS[args.source]["dataset_path"])
+    doc_store = fever.docs_store()
+    query_store = fever.queries_store()
+    for qrel in fever.qrels_iter():
+        print(qrel)
+        doc = doc_store.get(qrel.doc_id)
+        query = query_store.get(qrel.query_id)
+    passage_query_df["query"] = passage_query_df.apply(
+        lambda x: query_store.get(x), axis=1
+    )
+
+
 
 def sample_queries_and_passages(
     corpus_df: pd.DataFrame,
@@ -251,7 +271,7 @@ def load_glove_model(glove_file: Path) -> np.ndarray:
 
 def encode_bm25_dataset_to_json(df: pd.DataFrame, source: str) -> List[Dict]:
     dataset: List[Dict] = []
-    for idx, row in df.iterrows():
+    for _, row in df.iterrows():
         dataset.append(
             {
                 "info": {
@@ -271,7 +291,7 @@ def encode_bm25_dataset_to_json(df: pd.DataFrame, source: str) -> List[Dict]:
 
 def encode_tf_dataset_to_json(df: pd.DataFrame, source: str) -> List[Dict]:
     dataset: List[Dict] = []
-    for idx, row in df.iterrows():
+    for _, row in df.iterrows():
         dataset.append(
             {
                 "info": {
@@ -293,7 +313,7 @@ def encode_ner_dataset_to_json(
     df: pd.DataFrame, targets: Dict[str, List[Tuple[List, str]]], source: str,
 ) -> List[Dict]:
     dataset: List[Dict] = []
-    for idx, row in df.iterrows():
+    for _, row in df.iterrows():
         dataset.append(
             {
                 "info": {
@@ -435,43 +455,60 @@ def sem_sim_dataset_creation(dataset_df: pd.DataFrame) -> None:
 
     write_dataset_to_file("sem_sim", dataset_dict)
 
+def fact_checking_dataset_creation() -> None:
+    fever = ir_datasets.load(SRC_DATASETS[args.source]["dataset_path"])
+    doc_store = fever.docs_store()
+    query_df = pd.DataFrame(fever.queries_iter())
+    if args.sample_path is not None:
+        get_dataset_from_existing_sample_ir(fever, doc_store, query_df)
+    else:
+
+        for qrel in fever.qrels_iter():
+            doc = doc_store.get(qrel.doc_id)
+            query = query_df[query_df["query_id"] == qrel.query_id]
+            print(qrel)
+
+
 
 def main():
     logging.basicConfig(filename="msmarco.log", filemode="w+", level=logging.INFO)
 
-    # get corpus (passages) for bm25
-    corpus_df = get_corpus(Path(SRC_DATASETS[args.source]["path_corpus"]))
-    # get quueries for bm25
-    query_df = get_queries(Path(SRC_DATASETS[args.source]["path_queries"]))
+    if any(x in args.tasks for x in ["bm25", "tf", "semsim"]):
+        # get corpus (passages) for bm25
+        corpus_df = get_corpus(Path(SRC_DATASETS[args.source]["path_corpus"]))
+        # get quueries for bm25
+        query_df = get_queries(Path(SRC_DATASETS[args.source]["path_queries"]))
 
-    # decide whether to construct datset from existing sample or sample passages and queries newly
-    if args.sample_path is not None:
-        dataset_df = get_dataset_from_existing_sample(
-            corpus_df, query_df, Path("./datasets/samples") / args.sample_path
-        )
-    else:
-        # dict query to relevant passages
-        q_p_top1000_dict = get_top_1000_passages(SRC_DATASETS[args.source]["path_top1000"])
-        dataset_df = sample_queries_and_passages(
-            corpus_df, query_df, q_p_top1000_dict, args.size, args.samples_per_query
-        )
+        # decide whether to construct datset from existing sample or sample passages and queries newly
+        if args.sample_path is not None:
+            dataset_df = get_dataset_from_existing_sample(
+                corpus_df, query_df, Path("./datasets/samples") / args.sample_path
+            )
+        else:
+            # dict query to relevant passages
+            q_p_top1000_dict = get_top_1000_passages(SRC_DATASETS[args.source]["path_top1000"])
+            dataset_df = sample_queries_and_passages(
+                corpus_df, query_df, q_p_top1000_dict, args.size, args.samples_per_query
+            )
 
-        del q_p_top1000_dict
+            del q_p_top1000_dict
 
-    del query_df
+        del query_df
 
-    if "bm25" in args.tasks:
-        bm25_dataset_creation(dataset_df, corpus_df)
+        if "bm25" in args.tasks:
+            bm25_dataset_creation(dataset_df, corpus_df)
 
-    del corpus_df
+        del corpus_df
 
-    if "tf" in args.tasks:
-        tf_dataset_creation(dataset_df)
+        if "tf" in args.tasks:
+            tf_dataset_creation(dataset_df)
+        if "ner" in args.tasks:
+            ner_dataset_creation(dataset_df)
+        if "semsim" in args.tasks:
+            sem_sim_dataset_creation(dataset_df)
 
-    if "ner" in args.tasks:
-        ner_dataset_creation(dataset_df)
-    if "semsim" in args.tasks:
-        sem_sim_dataset_creation(dataset_df)
+    if "factchecking" in args.tasks:
+        fact_checking_dataset_creation()
 
 
 if __name__ == "__main__":
