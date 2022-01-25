@@ -427,14 +427,22 @@ def ner_dataset_creation(dataset_df: pd.DataFrame) -> None:
     write_dataset_to_file("ner", dataset_dict)
 
 
-def sem_sim_dataset_creation(dataset_df: pd.DataFrame) -> None:
+def sem_sim_dataset_creation(dataset_df: pd.DataFrame, count_oov_tokens: bool=False) -> None:
     glove_model = load_glove_model(Path(SRC_PRETRAINED_GLOVE))
     # get average embedding for cases when token is not present in glove model
     avg_embedding = np.average(np.asarray(list(glove_model.values())), axis=0)
-
+    num_oov_tokens = 0
+    num_tokens = 0
     def calculate_cos_sim(passage: str, query: str) -> float:
+        nonlocal num_oov_tokens
+        nonlocal num_tokens
         doc = list(map(str.lower, word_tokenize(passage)))
         query = list(map(str.lower, word_tokenize(query)))
+        if count_oov_tokens:
+            num_oov_tokens += len([x for x in doc if x not in glove_model])
+            num_oov_tokens += len([x for x in query if x not in glove_model])
+            num_tokens += len(doc)
+            num_tokens += len(query)
         g_e_doc = np.asarray([glove_model[x] if x in glove_model else avg_embedding for x in doc])
         g_e_q = np.asarray([glove_model[x] if x in glove_model else avg_embedding for x in query])
         cos_sim = np.zeros((g_e_doc.shape[0], g_e_q.shape[0]))
@@ -447,6 +455,8 @@ def sem_sim_dataset_creation(dataset_df: pd.DataFrame) -> None:
     dataset_df["cos_sim"] = dataset_df.apply(
         lambda x: calculate_cos_sim(x["passage"], x["query"]), axis=1
     )
+    if count_oov_tokens:
+        print(f"Number of tokens: {num_tokens}, number of oov tokens: {num_oov_tokens}, accounting for {(num_oov_tokens / num_tokens) * 100:.2f}%")
 
     # free memory
     del glove_model
@@ -505,7 +515,7 @@ def main():
         if "ner" in args.tasks:
             ner_dataset_creation(dataset_df)
         if "semsim" in args.tasks:
-            sem_sim_dataset_creation(dataset_df)
+            sem_sim_dataset_creation(dataset_df, count_oov_tokens=True)
 
     if "factchecking" in args.tasks:
         fact_checking_dataset_creation()
