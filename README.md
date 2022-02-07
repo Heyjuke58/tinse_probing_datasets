@@ -9,16 +9,23 @@ Make sure you have access to the docker daemon.
 
 Either:
 
-1. ``conda env create -f environment.yml``
-2. ``conda activate tinse``
+``conda env create -f environment.yml``
+``conda activate tinse``
 
 Or:
 
-1. ```conda create -n tinse python=3.8```
-2. ```conda activate tinse```
-3. ```pip install -r requirements.txt```
+``conda create -n tinse python=3.8``
+``conda activate tinse``
+``pip install -r requirements.txt``
 
-After that:
+To install neuralcoref from source:
+        
+``git clone https://github.com/huggingface/neuralcoref.git``
+``cd neuralcoref``
+``pip install -r requirements.txt``
+``pip install -e .``
+
+Download needed spacy pipelines:
 
 ``python -m spacy download en_core_web_sm``
 

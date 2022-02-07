@@ -1,7 +1,11 @@
+numpy
+spacy==2.1.9
 pandas
 nltk
-spacy # to get en_core_web_sm: python -m spacy download en_core_web_sm
+# to get needed spacy pipelines 
+# python -m spacy download en
+# python -m spacy download en_core_web_sm
+# python -m spacy download en_core_web_trf
 ftfy
 elasticsearch
 scipy
-ir_datasets

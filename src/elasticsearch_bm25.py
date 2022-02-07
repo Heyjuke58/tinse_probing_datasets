@@ -112,7 +112,7 @@ class ElasticSearchBM25(object):
         """
         host = 'http://localhost'
         assert os.system('docker') == 0, 'Cannot run docker! Please make sure docker has been installed correctly.'
-        container_name = f'easy-elasticsearch-node{int(time.time())}'
+        container_name = 'es-hinrichs'
         cmd = f'docker run -p {port_http}:9200 -p {port_tcp}:9300 -e "discovery.type=single-node" --detach ' + \
              f'--name {container_name} docker.elastic.co/elasticsearch/elasticsearch:{es_version}'
         logger.info(f'Running command: `{cmd}`')
