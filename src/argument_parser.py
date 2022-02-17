@@ -43,7 +43,7 @@ def parse_arguments():
         type=str,
         dest="tasks",
         default="bm25,semsim,ner,tf",
-        help="Tasks to run. Possible tasks are: ['bm25', 'semsim', 'ner']. Should be comma seperated",
+        help="Tasks to run. Possible tasks are: ['bm25', 'semsim', 'ner', 'corefres', 'factchecking']. Should be comma seperated",
     )
     parser.add_argument(
         "-sp",
@@ -55,5 +55,16 @@ def parse_arguments():
             Every time a dataset is newly sampled it is saved in csv format. Naming format: {src}_{size}_{samples per query}_{timestamp}.csv
             If set --size and --samples_per_query are ignored.""",
     )
+    parser.add_argument(
+        "--split",
+        type=str,
+        dest="split",
+        default="70,15,15",
+        help="",
+    )
 
-    return parser.parse_args()
+    args = parser.parse_args()
+
+    assert sum(list(map(int, args.split.split(',')))) == 100, "Not a valid train/val/test split. Must add up to 100 like 70,15,15."
+
+    return args

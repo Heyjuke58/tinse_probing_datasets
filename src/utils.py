@@ -8,6 +8,8 @@ import json
 from typing import List, Dict, Tuple
 from collections import defaultdict
 import random
+from src.dataset_sources import SRC_FEVER
+from collections import defaultdict
 
 
 def set_new_index(df: pd.DataFrame) -> pd.DataFrame:
@@ -58,40 +60,60 @@ def get_queries(path: Path, fix_unicode_errors: bool = True) -> pd.DataFrame:
     return queries_df
 
 
-def get_relevant_fever_data(
-    qrel_path: Path, corpus_path: Path, queries_path: Path
-) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    qrels_df: pd.DataFrame = pd.read_csv(qrel_path, sep="\t", encoding="utf8")
+def sample_fever_data(
+    split: str, size: int, seed: int = 12
+) -> Tuple[Dict[str, pd.DataFrame], Dict[str, pd.DataFrame], Dict[str, pd.DataFrame]]:
+    split_sizes = [
+        round(size * (split_size / 100)) for split_size in list(map(int, split.split(",")))
+    ]
+    qrels: Dict[str, pd.DataFrame] = {
+        f"{set_name}": pd.read_csv(
+            Path(SRC_FEVER[f"path_qrels_{set_name}"]), sep="\t", encoding="utf8"
+        ).sample(n=size, random_state=seed)
+        for set_name, size in zip(["train", "val", "test"], split_sizes)
+    }
 
-    unique_docs = qrels_df["corpus-id"].unique()
-    unique_queries = qrels_df["query-id"].unique()
+    unique_docs = {
+        f"{set_name}": qrels[set_name]["corpus-id"].unique()
+        for set_name in ["test", "val", "train"]
+    }
+    unique_queries = {
+        f"{set_name}": qrels[set_name]["query-id"].unique() for set_name in ["test", "val", "train"]
+    }
 
-    corpus: List[Dict] = []
-    queries: List[Dict] = []
+    corpus: Dict[str, List[Dict]] = defaultdict(list)
+    queries: Dict[str, List[Dict]] = defaultdict(list)
 
-    with open(corpus_path, "r") as corpus_file:
+    with open(SRC_FEVER["path_corpus"], "r") as corpus_file:
         for line in corpus_file:
             doc = json.loads(line)
-            if doc["_id"] in unique_docs:
-                corpus.append(doc)
-            # TODO: remove
-            if len(corpus) >= 2:
-                break
-    corpus_df = pd.DataFrame(corpus)
+            if doc["_id"] in unique_docs["train"]:
+                corpus["train"].append(doc)
+            if doc["_id"] in unique_docs["val"]:
+                corpus["val"].append(doc)
+            if doc["_id"] in unique_docs["test"]:
+                corpus["test"].append(doc)
+    corpus_dfs: Dict[str, pd.DataFrame] = {
+        set_name: pd.DataFrame(corpus[set_name]) for set_name in corpus.keys()
+    }
 
-    with open(queries_path, "r") as queries_file:
+    with open(SRC_FEVER["path_queries"], "r") as queries_file:
         for line in queries_file:
             query = json.loads(line)
-            if int(query["_id"]) in unique_queries:
-                queries.append(query)
-            # TODO: remove
-            if len(queries) >= 2:
-                break
-    queries_df = pd.DataFrame(queries)
-    queries_df["_id"] = pd.to_numeric(queries_df["_id"])
+            if int(query["_id"]) in unique_queries["train"]:
+                queries["train"].append(query)
+            if int(query["_id"]) in unique_queries["val"]:
+                queries["val"].append(query)
+            if int(query["_id"]) in unique_queries["test"]:
+                queries["test"].append(query)
+    queries_dfs: Dict[str, pd.DataFrame] = {
+        set_name: pd.DataFrame(queries[set_name]) for set_name in queries.keys()
+    }
+    for df in queries_dfs.values():
+        df["_id"] = pd.to_numeric(df["_id"])
 
     logging.info("Fever dataset preprocessed.")
-    return corpus_df, queries_df, qrels_df
+    return corpus_dfs, queries_dfs, qrels
 
 
 def sample_queries_and_passages(
@@ -157,13 +179,16 @@ def sample_queries_and_passages(
 
     return passage_query_df
 
+
 def get_dataset_from_existing_sample(
     corpus_df: pd.DataFrame, query_df: pd.DataFrame, sample_path: Path
 ) -> pd.DataFrame:
     try:
         passage_query_df = pd.read_csv(sample_path, sep=",")
     except FileNotFoundError:
-        raise FileNotFoundError(f"File {sample_path} you are trying to load the sample from does not exist.")
+        raise FileNotFoundError(
+            f"File {sample_path} you are trying to load the sample from does not exist."
+        )
     passage_query_df["query"] = passage_query_df.apply(
         lambda x: query_df.loc[query_df["qid"] == x["qid"]]["query"].values[0], axis=1
     )

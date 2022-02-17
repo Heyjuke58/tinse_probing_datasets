@@ -14,17 +14,26 @@ from scipy import spatial
 
 from src.argument_parser import parse_arguments
 from src.elasticsearch_bm25 import ElasticSearchBM25
-from src.nlp_utils import preprocess
+from src.nlp_utils import preprocess, load_glove_model
 from src.utils import (
     get_timestamp,
     set_new_index,
     get_corpus,
     get_queries,
-    get_relevant_fever_data,
+    sample_fever_data,
     get_top_1000_passages,
     sample_queries_and_passages,
-    get_dataset_from_existing_sample
+    get_dataset_from_existing_sample,
 )
+from src.json_encodings import (
+    encode_bm25_dataset_to_json,
+    encode_ner_dataset_to_json,
+    encode_tf_dataset_to_json,
+    encode_sem_sim_dataset_to_json,
+    encode_coref_res_dataset_to_json,
+    encode_fact_checking_dataset_to_json,
+)
+from src.dataset_sources import SRC_DATASETS, SRC_PRETRAINED_GLOVE
 
 # set visible devices to -1 since no gpu is needed
 os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
@@ -34,31 +43,6 @@ os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 
 download("stopwords")
 download("punkt")
-
-SRC_PRETRAINED_GLOVE = "./assets/glove/glove.6B.300d.txt"
-
-SRC_MS_MARCO = {
-    "short": "msmarco",
-    "long": "msmarco passage re-ranking",
-    "index_name": "msmarco3",
-    "path_corpus": "./assets/msmarco/passage_re_ranking/collection_sample_orig.tsv",
-    # "path_corpus": "./assets/msmarco/passage_re_ranking/collection.tsv",
-    # "path_queries": "./assets/msmarco/passage_re_ranking/queries.dev.tsv",
-    "path_queries": "./assets/msmarco/passage_re_ranking/queries.dev.small.tsv",
-    "path_top1000": "./assets/msmarco/passage_re_ranking/top1000.dev",
-}
-
-SRC_TREC = {}
-SRC_FEVER = {
-    "short": "fever",
-    "long": "fever fact checking",
-    "path_corpus": "./assets/fever/corpus.jsonl",
-    "path_queries": "./assets/fever/queries.jsonl",
-    "path_qrels": "./assets/fever/qrels/test.tsv",
-}
-
-SRC_DATASETS = {"msmarco": SRC_MS_MARCO, "trec": SRC_TREC, "fever": SRC_FEVER}
-
 
 # def get_dataset_from_existing_sample_ir(sample_path: Path) -> pd.DataFrame:
 #     try:
@@ -76,129 +60,10 @@ SRC_DATASETS = {"msmarco": SRC_MS_MARCO, "trec": SRC_TREC, "fever": SRC_FEVER}
 #     passage_query_df["query"] = passage_query_df.apply(lambda x: query_store.get(x), axis=1)
 
 
-def load_glove_model(glove_file: Path) -> np.ndarray:
-    logging.info("Loading Glove Model")
-    glove_model = {}
-    with open(glove_file, "r") as f:
-        for line in f:
-            split_line = line.split()
-            word = split_line[0]
-            embedding = np.array(split_line[1:], dtype=np.float64)
-            glove_model[word] = embedding
-    logging.info(f"{len(glove_model)} words loaded!")
-
-    return glove_model
-
-
-def encode_bm25_dataset_to_json(df: pd.DataFrame, source: str) -> List[Dict]:
-    dataset: List[Dict] = []
-    for _, row in df.iterrows():
-        dataset.append(
-            {
-                "info": {
-                    "pid": row["pid"],  # passage id
-                    "qid": row["qid"],  # query id
-                    "source": source,
-                },
-                "text": row["query"] + " [SEP] " + row["passage"],
-                "input": {"passage": row["passage"], "query": row["query"]},
-                "target": row["bm25"],
-            }
-        )
-    logging.info("BM25 dataset encoded to json.")
-
-    return dataset
-
-
-def encode_tf_dataset_to_json(df: pd.DataFrame, source: str) -> List[Dict]:
-    dataset: List[Dict] = []
-    for _, row in df.iterrows():
-        dataset.append(
-            {
-                "info": {
-                    "pid": row["pid"],  # passage id
-                    "qid": row["qid"],  # query id
-                    "source": source,
-                },
-                "text": row["query"] + " [SEP] " + row["passage"],
-                "input": {"passage": row["passage"], "query": row["query"]},
-                "target": row["avg_tf"],
-            }
-        )
-    logging.info("TF dataset encoded to json.")
-
-    return dataset
-
-
-def encode_ner_dataset_to_json(
-    df: pd.DataFrame, targets: Dict[str, List[Tuple[List, str]]], source: str
-) -> List[Dict]:
-    dataset: List[Dict] = []
-    for _, row in df.iterrows():
-        dataset.append(
-            {
-                "info": {
-                    "pid": row["pid"],  # passage id
-                    "qid": row["qid"],  # query id
-                    "source": source,
-                },
-                "text": row["query"] + " [SEP] " + row["passage"],
-                "input": {"passage": row["passage"], "query": row["query"]},
-                "targets": [
-                    {"span1": start_end, "label": label}
-                    for start_end, label in targets[str(row["pid"]) + " " + str(row["qid"])]
-                ],
-            }
-        )
-    logging.info("NER dataset encoded to json.")
-
-    return dataset
-
-
-def encode_sem_sim_dataset_to_json(df: pd.DataFrame, source: str) -> List[Dict]:
-    dataset: List[Dict] = []
-    for idx, row in df.iterrows():
-        dataset.append(
-            {
-                "info": {
-                    "pid": row["pid"],  # passage id
-                    "qid": row["qid"],  # query id
-                    "source": source,
-                },
-                "text": row["query"] + " [SEP] " + row["passage"],
-                "input": {"passage": row["passage"], "query": row["query"]},
-                "targets": [{}],
-            }
-        )
-    logging.info("Semantic similarity dataset encoded to json.")
-
-    return dataset
-
-
-def encode_coref_res_dataset_to_json(df: pd.DataFrame, source: str) -> List[Dict]:
-    dataset: List[Dict] = []
-    for idx, row in df.iterrows():
-        dataset.append(
-            {
-                "info": {
-                    "pid": row["pid"],  # passage id
-                    "qid": row["qid"],  # query id
-                    "source": source,
-                },
-                "text": row["query"] + " [SEP] " + row["passage"],
-                "input": {"passage": row["passage"], "query": row["query"]},
-                "target": row["cos_sim"],
-            }
-        )
-    logging.info("Semantic similarity dataset encoded to json.")
-
-    return dataset
-
-
-def write_dataset_to_file(task: str, dataset) -> None:
+def write_dataset_to_file(task: str, dataset, set_name: Optional[str] = None) -> None:
     output_filename = (
         SRC_DATASETS[args.source]["short"]
-        + f"_{task}_{args.size}_{args.samples_per_query}_{get_timestamp()}.json"
+        + f"_{set_name + '_' if set_name is not None else ''}{task}_{args.size}_{args.samples_per_query}_{get_timestamp()}.json"
     )
     path = Path("./datasets") / output_filename
     with open(path, "w", encoding="utf8") as outfile:
@@ -238,7 +103,7 @@ def bm25_dataset_creation(dataset_df: pd.DataFrame, corpus_df: pd.DataFrame) -> 
 
 
 def tf_dataset_creation(dataset_df: pd.DataFrame) -> None:
-    def calculate_tf(query: str, passage: str) -> float:
+    def calculate_tf(query: str, passage: str):
         pp = preprocess(passage)
         pq = preprocess(query)
         return np.average([len([tk for tk in pp if tk == token]) / len(pp) for token in pq])
@@ -270,24 +135,24 @@ def ner_dataset_creation(dataset_df: pd.DataFrame) -> None:
 
 
 def sem_sim_dataset_creation(dataset_df: pd.DataFrame, count_oov_tokens: bool = False) -> None:
-    glove_model = load_glove_model(Path(SRC_PRETRAINED_GLOVE))
+    glv_model = load_glove_model(Path(SRC_PRETRAINED_GLOVE))
     # get average embedding for cases when token is not present in glove model
-    avg_embedding = np.average(np.asarray(list(glove_model.values())), axis=0)
-    num_oov_tokens = 0
-    num_tokens = 0
+    avg_emb = np.average(np.asarray(list(glv_model.values())), axis=0)
+    num_oov_toks = 0
+    num_toks = 0
 
-    def calculate_cos_sim(passage: str, query: str) -> float:
-        nonlocal num_oov_tokens
-        nonlocal num_tokens
-        doc = list(map(str.lower, word_tokenize(passage)))
-        query = list(map(str.lower, word_tokenize(query)))
+    def calculate_cos_sim(passage: str, query: str):
+        nonlocal num_oov_toks
+        nonlocal num_toks
+        d_toks: List[str] = list(map(str.lower, word_tokenize(passage)))
+        q_toks: List[str] = list(map(str.lower, word_tokenize(query)))
         if count_oov_tokens:
-            num_oov_tokens += len([x for x in doc if x not in glove_model])
-            num_oov_tokens += len([x for x in query if x not in glove_model])
-            num_tokens += len(doc)
-            num_tokens += len(query)
-        g_e_doc = np.asarray([glove_model[x] if x in glove_model else avg_embedding for x in doc])
-        g_e_q = np.asarray([glove_model[x] if x in glove_model else avg_embedding for x in query])
+            num_oov_toks += len([x for x in d_toks if x not in glv_model])
+            num_oov_toks += len([x for x in q_toks if x not in glv_model])
+            num_toks += len(d_toks)
+            num_toks += len(q_toks)
+        g_e_doc = np.asarray([glv_model[x] if x in glv_model else avg_emb for x in d_toks])
+        g_e_q = np.asarray([glv_model[x] if x in glv_model else avg_emb for x in q_toks])
         cos_sim = np.zeros((g_e_doc.shape[0], g_e_q.shape[0]))
         for i, doc_e in enumerate(g_e_doc):
             for j, q_e in enumerate(g_e_q):
@@ -300,11 +165,11 @@ def sem_sim_dataset_creation(dataset_df: pd.DataFrame, count_oov_tokens: bool = 
     )
     if count_oov_tokens:
         print(
-            f"Number of tokens: {num_tokens}, number of oov tokens: {num_oov_tokens}, accounting for {(num_oov_tokens / num_tokens) * 100:.2f}%"
+            f"Number of tokens: {num_toks}, number of oov tokens: {num_oov_toks}, accounting for {(num_oov_toks / num_toks) * 100:.2f}%"
         )
 
     # free memory
-    del glove_model
+    del glv_model
 
     dataset_dict = encode_sem_sim_dataset_to_json(dataset_df, SRC_DATASETS[args.source]["long"])
 
@@ -340,18 +205,25 @@ def coref_res_dataset_creation(dataset_df: pd.DataFrame, source: str) -> None:
     write_dataset_to_file("coref_res", dataset_dict)
 
 
-def fact_checking_dataset_creation(source: str, sample_path: Optional[str]) -> None:
-    fever = ir_datasets.load(SRC_DATASETS[source]["dataset_path"])
-    doc_store = fever.docs_store()
-    query_df = pd.DataFrame(fever.queries_iter())
-    if args.sample_path is not None:
-        get_dataset_from_existing_sample_ir(fever, doc_store, query_df)
-    else:
+# def fact_checking_dataset_creation(corpus_dfs, queries_dfs, qrels) -> None:
+#     fever = ir_datasets.load(SRC_DATASETS[source]["dataset_path"])
+#     doc_store = fever.docs_store()
+#     query_df = pd.DataFrame(fever.queries_iter())
+#     if args.sample_path is not None:
+#         get_dataset_from_existing_sample_ir(fever, doc_store, query_df)
+#     else:
 
-        for qrel in fever.qrels_iter():
-            doc = doc_store.get(qrel.doc_id)
-            query = query_df[query_df["query_id"] == qrel.query_id]
-            print(qrel)
+#         for qrel in fever.qrels_iter():
+#             doc = doc_store.get(qrel.doc_id)
+#             query = query_df[query_df["query_id"] == qrel.query_id]
+#             print(qrel)
+
+
+def fact_checking_dataset_creation(corpus_dfs, queries_dfs, qrels) -> None:
+    json_res = encode_fact_checking_dataset_to_json(corpus_dfs, queries_dfs, qrels)
+
+    for set_name, dataset in json_res.items():
+        write_dataset_to_file("fact_checking", dataset, set_name)
 
 
 def main(args):
@@ -372,7 +244,12 @@ def main(args):
             # dict query to relevant passages
             q_p_top1000_dict = get_top_1000_passages(SRC_DATASETS[args.source]["path_top1000"])
             dataset_df = sample_queries_and_passages(
-                corpus_df, query_df, q_p_top1000_dict, args.size, args.samples_per_query, SRC_DATASETS[args.source]['short']
+                corpus_df,
+                query_df,
+                q_p_top1000_dict,
+                args.size,
+                args.samples_per_query,
+                SRC_DATASETS[args.source]["short"],
             )
 
             del q_p_top1000_dict
@@ -394,13 +271,8 @@ def main(args):
             coref_res_dataset_creation(dataset_df, args.source)
 
     if "factchecking" in args.tasks:
-        corpus_df, queries_df, qrels = get_relevant_fever_data(
-            Path(SRC_DATASETS[args.source]["path_qrels"]),
-            Path(SRC_DATASETS[args.source]["path_corpus"]),
-            Path(SRC_DATASETS[args.source]["path_queries"]),
-        )
-        pass
-        # fact_checking_dataset_creation()
+        corpus_dfs, queries_dfs, qrels = sample_fever_data(args.split, args.size)
+        fact_checking_dataset_creation(corpus_dfs, queries_dfs, qrels)
 
 
 if __name__ == "__main__":
