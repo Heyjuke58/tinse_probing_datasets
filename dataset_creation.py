@@ -1,8 +1,11 @@
+from collections import defaultdict
+from gettext import textdomain
 import json
 import logging
 import os
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
+import random
 
 import spacy
 import neuralcoref
@@ -176,27 +179,95 @@ def sem_sim_dataset_creation(dataset_df: pd.DataFrame, count_oov_tokens: bool = 
     write_dataset_to_file("sem_sim", dataset_dict)
 
 
-def coref_res_dataset_creation(dataset_df: pd.DataFrame, source: str) -> None:
+def coref_res_dataset_creation(
+    dataset_df: pd.DataFrame, source: str, neg_sample_ratio: str
+) -> None:
     #                         ref
-    # key: pid, value: List[([start, end], [])]
-    targets: Dict[str, List[Tuple[List[int], List[List[int]]]]] = {}
+    # key: pid + qid, value: List[(label(True|False), query token(str), [start, end], passage token, [start, end])]
+    targets: Dict[str, List[Tuple[bool, str, List, str, List]]] = defaultdict(list)
     coref_nlp = spacy.load("en_core_web_sm")
     neuralcoref.add_to_pipe(coref_nlp)
+
+    neg_sample_ratio_easy = float(neg_sample_ratio.split(",")[0]) / 100
+    num_easy_neg_samples = 0
+    total_samples = 0
+
+    def hard_example_possible(doc, query_len, query_ref_text, doc_ref) -> List:
+        possible_hard_examples = []
+        for ent in doc.ents:
+            # continue if entity is in query (doc contains both query and passage)
+            if ent.start <= query_len:
+                continue
+            # continue if entitiy and query or doc text share a string
+            elif (
+                ent.text.lower() in doc_ref.text.lower() 
+                or ent.text.lower() in query_ref_text.lower()
+                or doc_ref.text.lower() in ent.text.lower()
+                or query_ref_text.lower() in ent.text.lower()
+            ):
+                continue
+            # continue if entitity range (start, end) overlaps doc_ref range
+            elif ent.start <= doc_ref.end and doc_ref.start <= ent.end:
+                continue
+            # otherwise we have a valid hard negative example
+            else:
+                possible_hard_examples.append(ent)
+        return possible_hard_examples
 
     for _, row in dataset_df.iterrows():
         doc = coref_nlp(row["query"] + " " + row["passage"])
         query = coref_nlp(row["query"])
         passage = coref_nlp(row["passage"])
         for cluster in doc._.coref_clusters:
-            query_references = []
+            query_references: List[Tuple[str, int, int]] = []
             for i, reference in enumerate(cluster):
                 # only consider those references that appear in the query
                 if reference.start < len(query) and reference.end <= len(query):
-                    query_references.append([reference.start, reference.end])
+                    query_references.append((reference.text, reference.start, reference.end))
                 elif query_references:
-                    targets[str(row["pid"]) + " " + str(row["qid"])]
+                    for text, start, end in query_references:
+                        # add positive example
+                        targets[str(row["pid"]) + " " + str(row["qid"])].append(
+                            (
+                                True,
+                                text,
+                                [start, end],
+                                reference.text,
+                                [reference.start, reference.end],
+                            )
+                        )
+                        # add negative example
+                        total_samples += 1
+                        possible_hard_examples = hard_example_possible(
+                            doc, len(query), text, reference
+                        )
+                        easy = (
+                            True
+                            if num_easy_neg_samples / total_samples < neg_sample_ratio_easy
+                            # get easy example if hard one is not possiblle
+                            and not possible_hard_examples
+                            else False
+                        )
+                        if easy:
+                            num_easy_neg_samples += 1
+                            random_word = text
+                            while random_word == text:
+                                random_word = random.sample(set(coref_nlp.vocab.strings), 1)
+                            targets[str(row["pid"]) + " " + str(row["qid"])].append(
+                                (False, text, [start, end], random_word, [])
+                            )
+                        else:
+                            neg_sample = random.choice(possible_hard_examples)
+                            targets[str(row["pid"]) + " " + str(row["qid"])].append(
+                                (
+                                    False,
+                                    text,
+                                    [start, end],
+                                    neg_sample.text,
+                                    [neg_sample.start, neg_sample.end],
+                                )
+                            )
 
-        print(doc)
 
     dataset_dict = encode_coref_res_dataset_to_json(
         dataset_df, targets, SRC_DATASETS[source]["long"]
@@ -268,7 +339,7 @@ def main(args):
         if "semsim" in args.tasks:
             sem_sim_dataset_creation(dataset_df, count_oov_tokens=True)
         if "corefres" in args.tasks:
-            coref_res_dataset_creation(dataset_df, args.source)
+            coref_res_dataset_creation(dataset_df, args.source, args.neg_sample_ratio)
 
     if "factchecking" in args.tasks:
         corpus_dfs, queries_dfs, qrels = sample_fever_data(args.split, args.size)

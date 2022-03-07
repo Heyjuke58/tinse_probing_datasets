@@ -60,11 +60,21 @@ def parse_arguments():
         type=str,
         dest="split",
         default="70,15,15",
-        help="",
+        help="Train, val and test split ratio. Must add up to 100. Default: 70,15,15",
+    )
+    parser.add_argument(
+        "--neg_sample_ratio",
+        type=str,
+        dest="neg_sample_ratio",
+        default="50,50",
+        help="""Ratio of negative sampling containing easy and hard examples. 
+            First number corresponds to percentage * 100 of easy examples (random word), second for harder (other entities in the passage).
+            Must add up to 100. Default: 50,50""",
     )
 
     args = parser.parse_args()
 
     assert sum(list(map(int, args.split.split(',')))) == 100, "Not a valid train/val/test split. Must add up to 100 like 70,15,15."
+    assert sum(list(map(int, args.neg_sample_ratio.split(',')))) == 100, "Not a valid negative sampling ratio of easy and hard examples. Must add up to 100 like 50,50."
 
     return args

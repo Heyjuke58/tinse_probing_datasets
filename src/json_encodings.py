@@ -15,7 +15,7 @@ def encode_bm25_dataset_to_json(df: pd.DataFrame, source: str) -> List[Dict]:
                 },
                 "text": row["query"] + " [SEP] " + row["passage"],
                 "input": {"passage": row["passage"], "query": row["query"]},
-                "target": row["bm25"],
+                "targets": [{"label": row["bm25"]}],
             }
         )
     logging.info("BM25 dataset encoded to json.")
@@ -35,7 +35,7 @@ def encode_tf_dataset_to_json(df: pd.DataFrame, source: str) -> List[Dict]:
                 },
                 "text": row["query"] + " [SEP] " + row["passage"],
                 "input": {"passage": row["passage"], "query": row["query"]},
-                "target": row["avg_tf"],
+                "targets": [{"label": row["avg_tf"]}],
             }
         )
     logging.info("TF dataset encoded to json.")
@@ -80,7 +80,7 @@ def encode_sem_sim_dataset_to_json(df: pd.DataFrame, source: str) -> List[Dict]:
                 },
                 "text": row["query"] + " [SEP] " + row["passage"],
                 "input": {"passage": row["passage"], "query": row["query"]},
-                "targets": [{}],
+                "targets": [{"label": row["cos_sim"]}],
             }
         )
     logging.info("Semantic similarity dataset encoded to json.")
@@ -88,21 +88,34 @@ def encode_sem_sim_dataset_to_json(df: pd.DataFrame, source: str) -> List[Dict]:
     return dataset
 
 
-def encode_coref_res_dataset_to_json(df: pd.DataFrame, source: str) -> List[Dict]:
+def encode_coref_res_dataset_to_json(df: pd.DataFrame, targets, source: str) -> List[Dict]:
     dataset: List[Dict] = []
     for idx, row in df.iterrows():
-        dataset.append(
-            {
-                "info": {
-                    "pid": row["pid"],  # passage id
-                    "qid": row["qid"],  # query id
-                    "source": source,
-                },
-                "text": row["query"] + " [SEP] " + row["passage"],
-                "input": {"passage": row["passage"], "query": row["query"]},
-                "target": row["cos_sim"],
-            }
-        )
+        # only write sentence to dataset when there exists a coref
+        if targets[str(row["pid"]) + " " + str(row["qid"])]:
+            dataset.append(
+                {
+                    "info": {
+                        "pid": row["pid"],  # passage id
+                        "qid": row["qid"],  # query id
+                        "source": source,
+                    },
+                    "text": row["query"] + " [SEP] " + row["passage"],
+                    "input": {"passage": row["passage"], "query": row["query"]},
+                    "targets": [
+                        {
+                            "label": label,
+                            "span1": start_end1,
+                            "text1": text1,
+                            "span2": start_end2,
+                            "text2": text2,
+                        }
+                        for label, text1, start_end1, text2, start_end2 in targets[
+                            str(row["pid"]) + " " + str(row["qid"])
+                        ]
+                    ],
+                }
+            )
     logging.info("Semantic similarity dataset encoded to json.")
 
     return dataset
@@ -122,10 +135,10 @@ def encode_fact_checking_dataset_to_json(corpus_dfs, queries_dfs, qrels) -> Dict
                     "info": {"pid": row["corpus-id"], "qid": row["query-id"], "source": "fever"},
                     "text": q_data.text.values[0] + " [SEP] " + p_data.text.values[0],
                     "input": {"passage": p_data.text.values[0], "query": q_data.text.values[0]},
-                    "target": q_data.metadata.values[0]["label"],
+                    "targets": [{"label": q_data.metadata.values[0]["label"]}],
                 }
             )
         json_res[set_name] = dataset
     logging.info("Fact checking dataset encoded to json.")
-    
+
     return json_res
