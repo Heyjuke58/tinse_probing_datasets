@@ -5,12 +5,31 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "Coref Res",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/dataset_creation.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": [
+                "-s=64",
+                "-sq=100",
+                "-src=msmarco",
+                "-t=corefres"
+            ]
+        },
+        {
             "name": "Python: Current File",
             "type": "python",
             "request": "launch",
             "program": "${workspaceFolder}/dataset_creation.py",
             "console": "integratedTerminal",
-            "args": ["-s=64", "-sq=100", "-src=msmarco", "-t=corefres"]
+            "args": [
+                "-s=64",
+                "-sq=100",
+                "-src=msmarco",
+                "-t=corefres"
+            ]
         }
     ]
 }

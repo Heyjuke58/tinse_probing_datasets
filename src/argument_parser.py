@@ -43,7 +43,7 @@ def parse_arguments():
         type=str,
         dest="tasks",
         default="bm25,semsim,ner,tf",
-        help="Tasks to run. Possible tasks are: ['bm25', 'semsim', 'ner', 'corefres', 'factchecking']. Should be comma seperated",
+        help="Tasks to run. Possible tasks are: ['bm25', 'tf', 'semsim', 'ner', 'corefres', 'factchecking']. Should be comma seperated",
     )
     parser.add_argument(
         "-sp",

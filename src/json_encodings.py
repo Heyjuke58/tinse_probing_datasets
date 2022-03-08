@@ -116,7 +116,7 @@ def encode_coref_res_dataset_to_json(df: pd.DataFrame, targets, source: str) -> 
                     ],
                 }
             )
-    logging.info("Semantic similarity dataset encoded to json.")
+    logging.info("Coreference Resolution dataset encoded to json.")
 
     return dataset
 
