@@ -1,12 +1,14 @@
+import json
+import logging
+import random
 from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
-import logging
-import json
-import random
 
+import ir_datasets
 import neuralcoref
 import numpy as np
+import pandas as pd
 import spacy
 from nltk.tokenize import word_tokenize
 from scipy import spatial
@@ -21,16 +23,17 @@ from src.json_encodings import (
     encode_sem_sim_dataset_to_json,
     encode_tf_dataset_to_json,
 )
+from src.nlp_utils import load_glove_model, preprocess
 from src.utils import (
     get_corpus,
     get_dataset_from_existing_sample,
     get_queries,
-    get_top_1000_passages,
-    sample_queries_and_passages,
     get_timestamp,
+    get_top_1000_passages,
     sample_fever_data,
+    sample_queries_and_passages,
+    set_new_index
 )
-from src.nlp_utils import preprocess, load_glove_model
 
 
 class DatasetCreator:
@@ -79,32 +82,44 @@ class DatasetCreator:
             sp = self.sample_path.split("_")
             self.size, self.samples_per_query = int(sp[1]), int(sp[2])
 
-        if any(x in self.tasks for x in ["bm25", "tf", "semsim", "ner", "corefres"]):
+        if any(x in self.tasks for x in ["bm25", "tf", "semsim", "ner"]):
             # get corpus (passages) for bm25
             self.corpus_df = get_corpus(Path(SRC_DATASETS[self.source]["path_corpus"]))
             # get quueries for bm25
-            query_df = get_queries(Path(SRC_DATASETS[self.source]["path_queries"]))
+            self.query_df = get_queries(Path(SRC_DATASETS[self.source]["path_queries"]))
+            self.q_p_top1000_dict = None
 
             # decide whether to construct datset from existing sample or sample passages and queries newly
             if self.sample_path is not None:
                 self.dataset_df = get_dataset_from_existing_sample(
-                    self.corpus_df, query_df, Path("./datasets/samples") / self.sample_path
+                    self.corpus_df, self.query_df, Path("./datasets/samples") / self.sample_path
                 )
             else:
                 # dict query to relevant passages
-                q_p_top1000_dict = get_top_1000_passages(SRC_DATASETS[self.source]["path_top1000"])
+                self.q_p_top1000_dict = get_top_1000_passages(
+                    SRC_DATASETS[self.source]["path_top1000"]
+                )
                 self.dataset_df = sample_queries_and_passages(
                     self.corpus_df,
-                    query_df,
-                    q_p_top1000_dict,
+                    self.query_df,
+                    self.q_p_top1000_dict,
                     self.size,
                     self.samples_per_query,
                     SRC_DATASETS[self.source]["short"],
                 )
 
-                del q_p_top1000_dict
+            # free memory if data is not needed anymore
+            if not "corefres" in self.tasks:
+                del self.q_p_top1000_dict
+                del self.query_df
 
-            del query_df
+        elif any(x in self.tasks for x in ["corefres"]):
+            # dict query to relevant passages
+            self.q_p_top1000_dict = get_top_1000_passages(
+                SRC_DATASETS[self.source]["path_top1000"]
+            )
+            self.query_df = get_queries(Path(SRC_DATASETS[self.source]["path_queries"]))
+
 
     def run(self):
         """Method to generate datasets for al tasks"""
@@ -227,7 +242,13 @@ class DatasetCreator:
         self.write_dataset_to_file("sem_sim", dataset_dict)
 
     def coref_res_dataset_creation(self) -> None:
-        coref_res_df = self.dataset_df.copy()
+        assert isinstance(
+            self.q_p_top1000_dict, dict
+        ), "Qrels must be defined for coref res dataset creation"
+
+        # coref_res_df: pd.DataFrame = pd.DataFrame()
+        # coref_res_df = self.dataset_df.copy()
+
         #                         ref
         # key: pid + qid, value: List[(label(True|False), query token(str), [start, end], passage token, [start, end])]
         targets: Dict[str, List[Tuple[bool, str, List, str, List]]] = defaultdict(list)
@@ -239,7 +260,8 @@ class DatasetCreator:
         ), "Negative sampling ratio has to be defined when creating coref res dataset"
         neg_sample_ratio_easy = float(self.neg_sample_ratio.split(",")[0]) / 100
         num_easy_neg_samples = 0
-        total_samples = 0
+        total_samples = 0 # for controlling the ratio of hard/easy negative samples
+        total_dataset_size = 0 # for controlling the size of the dataset to be created
 
         def hard_example_possible(doc, query_len, query_ref_text, doc_ref) -> List:
             possible_hard_examples = []
@@ -263,66 +285,102 @@ class DatasetCreator:
                     possible_hard_examples.append(ent)
             return possible_hard_examples
 
-        sum_target = 0
-        for _, row in coref_res_df.iterrows():
-            has_target = False
+        sampled_queries = random.sample(
+            list(self.q_p_top1000_dict), len(self.q_p_top1000_dict.keys())
+        )
+        corpus = ir_datasets.load(SRC_DATASETS[self.source]["ir_path"])
+        doc_store = corpus.docs_store()
 
-            doc = coref_nlp(row["query"] + " " + row["passage"])
-            query = coref_nlp(row["query"])
-            for cluster in doc._.coref_clusters:
-                query_references: List[Tuple[str, int, int]] = []
-                for i, reference in enumerate(cluster):
-                    # only consider those references that appear in the query
-                    if reference.start < len(query) and reference.end <= len(query):
-                        query_references.append((reference.text, reference.start, reference.end))
-                    elif query_references:
-                        for text, start, end in query_references:
-                            # add positive example
-                            has_target = True
-                            targets[str(row["pid"]) + " " + str(row["qid"])].append(
-                                (
-                                    True,
-                                    text,
-                                    [start, end],
-                                    reference.text,
-                                    [reference.start, reference.end],
-                                )
+        passages: pd.DataFrame = pd.DataFrame()
+        queries: pd.DataFrame = pd.DataFrame()
+
+        for qid in sampled_queries:
+            samples_per_query = 0
+            possible_passages = self.q_p_top1000_dict[qid]
+            sampled_passages = random.sample(possible_passages, len(possible_passages))
+            q = self.query_df.loc[self.query_df["qid"] == qid]
+            q_text = q["query"].values[0]
+            for pid in sampled_passages:
+                has_target = False
+                p = doc_store.get(str(pid)).text
+                doc = coref_nlp(q_text + " " + p)
+                query = coref_nlp(q_text)
+                for cluster in doc._.coref_clusters:
+                    query_references: List[Tuple[str, int, int]] = []
+                    for i, reference in enumerate(cluster):
+                        # only consider those references that appear in the query
+                        if reference.start < len(query) and reference.end <= len(query):
+                            query_references.append(
+                                (reference.text, reference.start, reference.end)
                             )
-                            # add negative example
-                            total_samples += 1
-                            possible_hard_examples = hard_example_possible(
-                                doc, len(query), text, reference
-                            )
-                            easy = (
-                                True
-                                if num_easy_neg_samples / total_samples < neg_sample_ratio_easy
-                                # get easy example if hard one is not possiblle
-                                or not possible_hard_examples
-                                else False
-                            )
-                            if easy:
-                                num_easy_neg_samples += 1
-                                random_word = text
-                                while random_word == text:
-                                    random_word = random.sample(set(coref_nlp.vocab.strings), 1)
-                                targets[str(row["pid"]) + " " + str(row["qid"])].append(
-                                    (False, text, [start, end], random_word, [])
-                                )
-                            else:
-                                neg_sample = random.choice(possible_hard_examples)
-                                targets[str(row["pid"]) + " " + str(row["qid"])].append(
+                        elif query_references:
+                            for text, start, end in query_references:
+                                # add positive example
+                                if not has_target:
+                                    samples_per_query += 1
+                                    total_dataset_size += 1
+                                    has_target = True
+                                    passages = pd.concat([passages, pd.DataFrame({"pid": pid, "passage": p}, index=[pid])])
+                                targets[str(pid) + " " + str(qid)].append(
                                     (
-                                        False,
+                                        True,
                                         text,
                                         [start, end],
-                                        neg_sample.text,
-                                        [neg_sample.start, neg_sample.end],
+                                        reference.text,
+                                        [reference.start, reference.end],
                                     )
                                 )
-            if has_target:
-                sum_target += 1
+                                # add negative example
+                                total_samples += 1
+                                possible_hard_examples = hard_example_possible(
+                                    doc, len(query), text, reference
+                                )
+                                easy = (
+                                    True
+                                    if num_easy_neg_samples / total_samples < neg_sample_ratio_easy
+                                    # get easy example if hard one is not possiblle
+                                    or not possible_hard_examples
+                                    else False
+                                )
+                                if easy:
+                                    num_easy_neg_samples += 1
+                                    random_word = text
+                                    while random_word == text:
+                                        random_word = random.sample(set(coref_nlp.vocab.strings), 1)[0]
+                                    targets[str(pid) + " " + str(qid)].append(
+                                        (False, text, [start, end], random_word, [])
+                                    )
+                                else:
+                                    neg_sample = random.choice(possible_hard_examples)
+                                    targets[str(pid) + " " + str(qid)].append(
+                                        (
+                                            False,
+                                            text,
+                                            [start, end],
+                                            neg_sample.text,
+                                            [neg_sample.start, neg_sample.end],
+                                        )
+                                    )
+                # break (and continue with next query) if enough passages have been sampled for a single query
+                if samples_per_query >= self.samples_per_query:
+                    break
+            # coreferences found for query
+            if samples_per_query != 0:
+                to_concat = pd.concat(
+                    [q] * samples_per_query,
+                    ignore_index=True,
+                )
+                queries = pd.concat([queries, to_concat], ignore_index=True)
+            # break if dataset has desired size
+            if total_dataset_size >= self.size:
+                break
 
-        print(sum_target / len(coref_res_df))
+        # reset index to merge with queries
+        passages = set_new_index(passages)
+        queries = set_new_index(queries)
+
+        # concat passages and queries dataframes
+        coref_res_df = pd.concat([passages, queries], sort=False, axis=1)
 
         dataset_dict = encode_coref_res_dataset_to_json(
             coref_res_df, targets, SRC_DATASETS[self.source]["long"]

@@ -5,6 +5,14 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "Test IR",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/test_ir.py",
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
             "name": "Coref Res",
             "type": "python",
             "request": "launch",
@@ -13,7 +21,7 @@
             "justMyCode": false,
             "args": [
                 "-s=64",
-                "-sq=100",
+                "-sq=5",
                 "-src=msmarco",
                 "-t=corefres"
             ]
