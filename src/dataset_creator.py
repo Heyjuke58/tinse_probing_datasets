@@ -296,7 +296,7 @@ class DatasetCreator:
 
         for j, qid in enumerate(sampled_queries):
             samples_per_query = 0
-            possible_passages = self.q_p_top1000_dict[qid]
+            possible_passages = self.q_p_top1000_dict[qid][:50] # get only 50 top passages to reduce runtime
             sampled_passages = random.sample(possible_passages, len(possible_passages))
             q = self.query_df.loc[self.query_df["qid"] == qid]
             q_text = q["query"].values[0]
@@ -305,7 +305,10 @@ class DatasetCreator:
                 p = doc_store.get(str(pid)).text
                 doc = coref_nlp(q_text + " " + p)
                 query = coref_nlp(q_text)
+                skip_passage = False
                 for cluster in doc._.coref_clusters:
+                    if skip_passage:
+                        break
                     query_references: List[Tuple[str, int, int]] = []
                     for reference in cluster:
                         # only consider those references that appear in the query
@@ -362,6 +365,9 @@ class DatasetCreator:
                                             [neg_sample.start, neg_sample.end],
                                         )
                                     )
+                        else:
+                            skip_passage = True
+                            break
                 # break (and continue with next query) if enough passages have been sampled for a single query
                 if samples_per_query >= self.samples_per_query:
                     break
