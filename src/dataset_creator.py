@@ -294,7 +294,7 @@ class DatasetCreator:
         passages: pd.DataFrame = pd.DataFrame()
         queries: pd.DataFrame = pd.DataFrame()
 
-        for qid in sampled_queries:
+        for j, qid in enumerate(sampled_queries):
             samples_per_query = 0
             possible_passages = self.q_p_top1000_dict[qid]
             sampled_passages = random.sample(possible_passages, len(possible_passages))
@@ -307,7 +307,7 @@ class DatasetCreator:
                 query = coref_nlp(q_text)
                 for cluster in doc._.coref_clusters:
                     query_references: List[Tuple[str, int, int]] = []
-                    for i, reference in enumerate(cluster):
+                    for reference in cluster:
                         # only consider those references that appear in the query
                         if reference.start < len(query) and reference.end <= len(query):
                             query_references.append(
@@ -320,6 +320,7 @@ class DatasetCreator:
                                     samples_per_query += 1
                                     total_dataset_size += 1
                                     has_target = True
+                                    logging.info(f"Coref res dataset size: {total_dataset_size} ({j}/{len(sampled_queries)} queries processed)")
                                     passages = pd.concat([passages, pd.DataFrame({"pid": pid, "passage": p}, index=[pid])])
                                 targets[str(pid) + " " + str(qid)].append(
                                     (
