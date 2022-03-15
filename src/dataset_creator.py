@@ -348,11 +348,23 @@ class DatasetCreator:
                                 )
                                 if easy:
                                     num_easy_neg_samples += 1
-                                    random_word = text
-                                    while random_word == text:
-                                        random_word = random.sample(set(coref_nlp.vocab.strings), 1)[0]
+                                    neg_s_start, neg_s_end, random_word = 0, 0, ""
+                                    found_easy = False
+                                    while not found_easy:
+                                        idx, random_word = random.sample(list(enumerate(doc.doc[len(query):])), 1)[0]
+                                        neg_s_start, neg_s_end = idx + len(query), idx + len(query) + 1
+                                        found_easy = True
+                                        # check whether random word overlaps with coreference
+                                        if reference.start <= neg_s_end and neg_s_start <= reference.end:
+                                            found_easy = False
+                                            continue
+                                        # check wehter random word overlaps with any entity from the passage
+                                        for ent in doc.ents:
+                                            if ent.start <= neg_s_end and neg_s_start <= ent.end:
+                                                found_easy = False
+                                                break
                                     targets[str(pid) + " " + str(qid)].append(
-                                        (False, text, [start, end], random_word, [])
+                                        (False, text, [start, end], random_word, [neg_s_start, neg_s_end])
                                     )
                                 else:
                                     neg_sample = random.choice(possible_hard_examples)
