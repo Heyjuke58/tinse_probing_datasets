@@ -347,10 +347,12 @@ class DatasetCreator:
                                     else False
                                 )
                                 if easy:
-                                    num_easy_neg_samples += 1
                                     neg_s_start, neg_s_end, random_word = 0, 0, ""
                                     found_easy = False
-                                    while not found_easy:
+                                    max_tries = 500
+                                    tries = 0
+                                    while not found_easy and tries <= max_tries:
+                                        tries += 1
                                         idx, random_word = random.sample(list(enumerate(doc.doc[len(query):])), 1)[0]
                                         neg_s_start, neg_s_end = idx + len(query), idx + len(query) + 1
                                         found_easy = True
@@ -363,9 +365,11 @@ class DatasetCreator:
                                             if ent.start <= neg_s_end and neg_s_start <= ent.end:
                                                 found_easy = False
                                                 break
-                                    targets[str(pid) + " " + str(qid)].append(
-                                        (False, text, [start, end], random_word, [neg_s_start, neg_s_end])
-                                    )
+                                    if found_easy:
+                                        num_easy_neg_samples += 1
+                                        targets[str(pid) + " " + str(qid)].append(
+                                            (False, text, [start, end], random_word, [neg_s_start, neg_s_end])
+                                        )
                                 else:
                                     neg_sample = random.choice(possible_hard_examples)
                                     targets[str(pid) + " " + str(qid)].append(
