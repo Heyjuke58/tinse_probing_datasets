@@ -335,7 +335,6 @@ class DatasetCreator:
                                     )
                                 )
                                 # add negative example
-                                total_samples += 1
                                 possible_hard_examples = hard_example_possible(
                                     doc, len(query), text, reference
                                 )
@@ -366,11 +365,13 @@ class DatasetCreator:
                                                 found_easy = False
                                                 break
                                     if found_easy:
+                                        total_samples += 1
                                         num_easy_neg_samples += 1
                                         targets[str(pid) + " " + str(qid)].append(
                                             (False, text, [start, end], random_word, [neg_s_start, neg_s_end])
                                         )
                                 else:
+                                    total_samples += 1
                                     neg_sample = random.choice(possible_hard_examples)
                                     targets[str(pid) + " " + str(qid)].append(
                                         (
