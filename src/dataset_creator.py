@@ -353,7 +353,7 @@ class DatasetCreator:
                                     tries = 0
                                     while not found_easy and tries <= max_tries:
                                         tries += 1
-                                        idx, random_word = random.sample(list(enumerate(doc.doc[len(query):])), 1)[0]
+                                        idx, random_word = random.sample(list(enumerate([x.text for x in doc.doc[len(query):]])), 1)[0]
                                         neg_s_start, neg_s_end = idx + len(query), idx + len(query) + 1
                                         found_easy = True
                                         # check whether random word overlaps with coreference
