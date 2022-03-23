@@ -23,7 +23,7 @@ from src.json_encodings import (
     encode_sem_sim_dataset_to_json,
     encode_tf_dataset_to_json,
 )
-from src.nlp_utils import load_glove_model, preprocess
+from src.nlp_utils import load_glove_model, preprocess, preprocess_sem_sim
 from src.utils import (
     get_corpus,
     get_dataset_from_existing_sample,
@@ -32,7 +32,7 @@ from src.utils import (
     get_top_1000_passages,
     sample_fever_data,
     sample_queries_and_passages,
-    set_new_index
+    set_new_index,
 )
 
 
@@ -115,11 +115,8 @@ class DatasetCreator:
 
         elif any(x in self.tasks for x in ["corefres"]):
             # dict query to relevant passages
-            self.q_p_top1000_dict = get_top_1000_passages(
-                SRC_DATASETS[self.source]["path_top1000"]
-            )
+            self.q_p_top1000_dict = get_top_1000_passages(SRC_DATASETS[self.source]["path_top1000"])
             self.query_df = get_queries(Path(SRC_DATASETS[self.source]["path_queries"]))
-
 
     def run(self):
         """Method to generate datasets for al tasks"""
@@ -208,8 +205,10 @@ class DatasetCreator:
         def calculate_cos_sim(passage: str, query: str):
             nonlocal num_oov_toks
             nonlocal num_toks
-            d_toks: List[str] = list(map(str.lower, word_tokenize(passage)))
-            q_toks: List[str] = list(map(str.lower, word_tokenize(query)))
+            # d_toks: List[str] = list(map(str.lower, word_tokenize(passage)))
+            d_toks: List[str] = preprocess_sem_sim(passage)
+            # q_toks: List[str] = list(map(str.lower, word_tokenize(query)))
+            q_toks: List[str] = preprocess_sem_sim(query)
             if count_oov_tokens:
                 num_oov_toks += len([x for x in d_toks if x not in glv_model])
                 num_oov_toks += len([x for x in q_toks if x not in glv_model])
@@ -258,8 +257,8 @@ class DatasetCreator:
         ), "Negative sampling ratio has to be defined when creating coref res dataset"
         neg_sample_ratio_easy = float(self.neg_sample_ratio.split(",")[0]) / 100
         num_easy_neg_samples = 0
-        total_samples = 0 # for controlling the ratio of hard/easy negative samples
-        total_dataset_size = 0 # for controlling the size of the dataset to be created
+        total_samples = 0  # for controlling the ratio of hard/easy negative samples
+        total_dataset_size = 0  # for controlling the size of the dataset to be created
 
         def hard_example_possible(doc, query_len, query_ref_text, doc_ref) -> List:
             possible_hard_examples = []
@@ -294,7 +293,9 @@ class DatasetCreator:
 
         for j, qid in enumerate(sampled_queries):
             samples_per_query = 0
-            possible_passages = self.q_p_top1000_dict[qid][:50] # get only 50 top passages to reduce runtime
+            possible_passages = self.q_p_top1000_dict[qid][
+                :100
+            ]  # get only 50 top passages to reduce runtime
             sampled_passages = random.sample(possible_passages, len(possible_passages))
             q = self.query_df.loc[self.query_df["qid"] == qid]
             q_text = q["query"].values[0]
@@ -321,8 +322,15 @@ class DatasetCreator:
                                     samples_per_query += 1
                                     total_dataset_size += 1
                                     has_target = True
-                                    logging.info(f"Coref res dataset size: {total_dataset_size} ({j}/{len(sampled_queries)} queries processed)")
-                                    passages = pd.concat([passages, pd.DataFrame({"pid": pid, "passage": p}, index=[pid])])
+                                    logging.info(
+                                        f"Coref res dataset size: {total_dataset_size} ({j}/{len(sampled_queries)} queries processed)"
+                                    )
+                                    passages = pd.concat(
+                                        [
+                                            passages,
+                                            pd.DataFrame({"pid": pid, "passage": p}, index=[pid]),
+                                        ]
+                                    )
                                 total_samples += 1
                                 targets[str(pid) + " " + str(qid)].append(
                                     (
@@ -351,11 +359,22 @@ class DatasetCreator:
                                     tries = 0
                                     while not found_easy and tries <= max_tries:
                                         tries += 1
-                                        idx, random_word = random.sample(list(enumerate([x.text for x in doc.doc[len(query):]])), 1)[0]
-                                        neg_s_start, neg_s_end = idx + len(query), idx + len(query) + 1
+                                        idx, random_word = random.sample(
+                                            list(
+                                                enumerate([x.text for x in doc.doc[len(query) :]])
+                                            ),
+                                            1,
+                                        )[0]
+                                        neg_s_start, neg_s_end = (
+                                            idx + len(query),
+                                            idx + len(query) + 1,
+                                        )
                                         found_easy = True
                                         # check whether random word overlaps with coreference
-                                        if reference.start <= neg_s_end and neg_s_start <= reference.end:
+                                        if (
+                                            reference.start <= neg_s_end
+                                            and neg_s_start <= reference.end
+                                        ):
                                             found_easy = False
                                             continue
                                         # check wehter random word overlaps with any entity from the passage
@@ -366,7 +385,13 @@ class DatasetCreator:
                                     if found_easy:
                                         num_easy_neg_samples += 1
                                         targets[str(pid) + " " + str(qid)].append(
-                                            (False, text, [start, end], random_word, [neg_s_start, neg_s_end])
+                                            (
+                                                False,
+                                                text,
+                                                [start, end],
+                                                random_word,
+                                                [neg_s_start, neg_s_end],
+                                            )
                                         )
                                 else:
                                     neg_sample = random.choice(possible_hard_examples)
