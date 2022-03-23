@@ -10,7 +10,8 @@ PORTER_STEMMER = PorterStemmer()
 STOPWORDS = set(stopwords.words("english"))
 
 def preprocess(string: str) -> List[str]:
-    """Tokenize string, remove stopwords, stemming
+    """
+    Tokenize string, remove stopwords, stemming
 
     Args:
         string (str): The text to preprocess
@@ -22,6 +23,16 @@ def preprocess(string: str) -> List[str]:
     x = [word for word in x if word.isalnum()]
     x = [word for word in x if not word in STOPWORDS]
     x = [PORTER_STEMMER.stem(word) for word in x]
+    return x
+
+def preprocess_sem_sim(string: str) -> List[str]:
+    """
+    Tokenize string, remove stopwords, convert to lowercase
+    Preprocessing for semantic similarity task
+    """
+    x = word_tokenize(string)
+    x = [word for word in x if not word in STOPWORDS]
+    x = list(map(str.lower, x))
     return x
 
 def load_glove_model(glove_file: Path) -> Dict[str, np.ndarray]:
