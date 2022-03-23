@@ -7,35 +7,39 @@ Script(s) to generate datasets for probing tasks of BERT (project TINSE)
 
 Make sure you have access to the docker daemon.
 
-Either:
-
-``conda env create -f environment.yml``
-``conda activate tinse``
-
-Or:
-
-``conda create -n tinse python=3.8``
-``conda activate tinse``
-``pip install -r requirements.txt``
+```sh
+conda create -n tinse python=3.8
+conda activate tinse
+pip install -r requirements.txt
+```
 
 To install neuralcoref from source:
-        
-``git clone https://github.com/huggingface/neuralcoref.git``
-``cd neuralcoref``
-``pip install -r requirements.txt``
-``pip install -e .``
+```sh
+git clone https://github.com/huggingface/neuralcoref.git
+cd neuralcoref
+pip install -r requirements.txt
+pip install -e .
+```
 
 Download needed spacy pipelines:
 
-``python -m spacy download en_core_web_sm``
+```sh
+python -m spacy download en_core_web_sm
+```
 
 ***
 
 ## Usage
+In other Terminal:
+```sh
+docker-compose up
+```
 
-```conda activate tinse```
+```sh
+conda activate tinse
+python dataset_creation.py -t=<tasks> -s=<size> -sq=<samples_per_query> ...
+```
 
-TODO
 
 ### Creating datasets
 

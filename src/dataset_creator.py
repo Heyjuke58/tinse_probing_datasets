@@ -162,8 +162,6 @@ class DatasetCreator:
             lambda x: bm25.score(x["query"], document_ids=[x["pid"]])[x["pid"]], axis=1
         )
 
-        bm25.delete_container()
-
         dataset_dict = encode_bm25_dataset_to_json(bm25_df, SRC_DATASETS[self.source]["long"])
 
         self.write_dataset_to_file("bm25", dataset_dict)

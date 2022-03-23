@@ -75,7 +75,7 @@ class ElasticSearchBM25(object):
             logger.info(f'No index found and now do indexing')
             self._index_corpus(corpus, index_name)
         self.index_name = index_name
-        logger.info('All set up.')
+        logger.info('ES service set up.')
 
     def _check_service_running(self, host, port) -> bool:
         """
