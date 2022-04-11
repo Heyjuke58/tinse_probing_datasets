@@ -1,0 +1,3 @@
+[submodule "ir_datasets"]
+	path = ir_datasets
+	url = git@github.com:Heyjuke58/ir_datasets.git
