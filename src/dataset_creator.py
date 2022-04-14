@@ -127,7 +127,7 @@ class DatasetCreator:
             self.query_df = get_queries(Path(SRC_DATASETS[self.source]["path_queries"]))
 
     def run(self):
-        """Method to generate datasets for al tasks"""
+        """Method to generate datasets for all tasks"""
         for task, func in self.task_methods.items():
             if task in self.tasks:
                 func()
