@@ -34,6 +34,9 @@ In other Terminal:
 ```sh
 docker-compose up
 ```
+```sh
+docker run -p 12375:9200 -p 12376:9300 -e "discovery.type=single-node" --detach --name es -v esdata1:/usr/share/elasticsearch/data:rw  docker.elastic.co/elasticsearch/elasticsearch:7.16.2
+```
 
 ```sh
 conda activate tinse
