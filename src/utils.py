@@ -180,6 +180,15 @@ def sample_queries_and_passages(
     return passage_query_df
 
 
+def sample_bm25_train_queries(
+    query_df: pd.DataFrame,
+    size: int,
+    samples_per_query: int,
+) -> pd.DataFrame:
+    sampled_queries = random.sample(query_df["pid"].tolist(), size)
+    return query_df
+
+
 def get_dataset_from_existing_sample(
     corpus_df: pd.DataFrame, query_df: pd.DataFrame, sample_path: Path
 ) -> pd.DataFrame:

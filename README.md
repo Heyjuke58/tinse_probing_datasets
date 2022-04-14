@@ -27,12 +27,22 @@ Download needed spacy pipelines:
 python -m spacy download en_core_web_sm
 ```
 
+### Clueweb Setup
+
+1. Go to Hadoop Cluster
+2. activate env ``source clue/bin/activate``
+3. Run script
+4. Move constructed file to pascal0
+
 ***
 
 ## Usage
 In other Terminal:
 ```sh
 docker-compose up
+```
+```sh
+docker run -p 12375:9200 -p 12376:9300 -e "discovery.type=single-node" --detach --name es -v esdata1:/usr/share/elasticsearch/data:rw  docker.elastic.co/elasticsearch/elasticsearch:7.16.2
 ```
 
 ```sh

@@ -31,6 +31,7 @@ from src.utils import (
     get_top_1000_passages,
     sample_fever_data,
     sample_queries_and_passages,
+    sample_bm25_train_queries,
     set_new_index,
 )
 
@@ -47,6 +48,7 @@ class DatasetCreator:
         sample_path: Optional[str] = None,
         neg_sample_ratio: Optional[str] = None,
         split: Optional[str] = None,
+        bm_25_training: bool = False,
     ) -> None:
         logging.basicConfig(
             filename=f"{source}_{get_timestamp()}.log", filemode="w+", level=logging.INFO
@@ -68,6 +70,8 @@ class DatasetCreator:
         self.neg_sample_ratio = neg_sample_ratio
         self.split = split
 
+        self.bm_25_training = bm_25_training
+
         self.task_methods = {
             "bm25": self.bm25_dataset_creation,
             "tf": self.tf_dataset_creation,
@@ -75,13 +79,14 @@ class DatasetCreator:
             "ner": self.ner_dataset_creation,
             "corefres": self.coref_res_dataset_creation,
             "factchecking": self.fact_checking_dataset_creation,
+            "bm25train": self.bm25_train_dataset_creation,
         }
 
         if self.sample_path is not None:
             sp = self.sample_path.split("_")
             self.size, self.samples_per_query = int(sp[1]), int(sp[2])
 
-        if any(x in self.tasks for x in ["bm25", "tf", "semsim", "ner"]):
+        if any(x in self.tasks for x in ["bm25", "tf", "semsim", "ner", "bm25train"]):
             # get corpus (passages) for bm25
             self.corpus_df = get_corpus(Path(SRC_DATASETS[self.source]["path_corpus"]))
             # get quueries for bm25
@@ -92,6 +97,10 @@ class DatasetCreator:
             if self.sample_path is not None:
                 self.dataset_df = get_dataset_from_existing_sample(
                     self.corpus_df, self.query_df, Path("./datasets/samples") / self.sample_path
+                )
+            elif self.bm_25_training:
+                self.dataset_df = sample_bm25_train_queries(
+                    self.query_df, self.size, self.samples_per_query
                 )
             else:
                 # dict query to relevant passages
@@ -161,6 +170,31 @@ class DatasetCreator:
         dataset_dict = encode_bm25_dataset_to_json(bm25_df, SRC_DATASETS[self.source]["long"])
 
         self.write_dataset_to_file("bm25", dataset_dict)
+
+    def bm25_train_dataset_creation(self) -> None:
+        bm25_df = self.dataset_df.copy()
+        pool = self.corpus_df["passage"].to_dict()
+        bm25 = ElasticSearchBM25(
+            pool,
+            index_name=SRC_DATASETS[self.source]["index_name"],
+            service_type="docker",
+            max_waiting=100,
+            port_http=self.port_http,
+            port_tcp=self.port_tcp,
+            es_version="7.16.2",
+            reindexing=False,
+        )
+        res_df = None
+
+        for row in bm25_df.iterrows():
+            query_text = row["query"]
+            documents_ranked, scores_ranked = bm25.query(
+                query_text, topk=self.samples_per_query, return_scores=True
+            )
+            if res_df is None:
+                res_df = pd.concat([row] * self.samples_per_query, ignore_index=True)
+
+        del pool
 
     def tf_dataset_creation(self) -> None:
         tf_df = self.dataset_df.copy()
@@ -409,10 +443,7 @@ class DatasetCreator:
                     break
             # coreferences found for query
             if samples_per_query != 0:
-                to_concat = pd.concat(
-                    [q] * samples_per_query,
-                    ignore_index=True,
-                )
+                to_concat = pd.concat([q] * samples_per_query, ignore_index=True)
                 queries = pd.concat([queries, to_concat], ignore_index=True)
             # break if dataset has desired size
             if total_dataset_size >= self.size:
