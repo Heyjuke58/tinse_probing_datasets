@@ -10,7 +10,6 @@ import neuralcoref
 import numpy as np
 import pandas as pd
 import spacy
-from nltk.tokenize import word_tokenize
 from scipy import spatial
 
 from src.dataset_sources import SRC_DATASETS, SRC_PRETRAINED_GLOVE
@@ -205,9 +204,7 @@ class DatasetCreator:
         def calculate_cos_sim(passage: str, query: str):
             nonlocal num_oov_toks
             nonlocal num_toks
-            # d_toks: List[str] = list(map(str.lower, word_tokenize(passage)))
             d_toks: List[str] = preprocess_sem_sim(passage)
-            # q_toks: List[str] = list(map(str.lower, word_tokenize(query)))
             q_toks: List[str] = preprocess_sem_sim(query)
             if count_oov_tokens:
                 num_oov_toks += len([x for x in d_toks if x not in glv_model])
