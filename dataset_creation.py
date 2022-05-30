@@ -25,7 +25,8 @@ def main(args):
         args.port_tcp,
         args.sample_path,
         args.neg_sample_ratio,
-        args.split
+        args.split,
+        args.id_pairs
     )
 
     dc.run()

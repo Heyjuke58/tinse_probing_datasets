@@ -71,6 +71,8 @@ def parse_arguments():
             First number corresponds to percentage * 100 of easy examples (random word), second for harder (other entities in the passage).
             Must add up to 100. Default: 50,50""",
     )
+    parser.add_argument('--id_pairs', dest='id_pairs', action='store_true')
+
 
     args = parser.parse_args()
 

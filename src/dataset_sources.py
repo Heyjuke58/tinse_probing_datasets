@@ -7,9 +7,11 @@ SRC_MS_MARCO = {
     # "path_corpus": "./assets/msmarco/passage_re_ranking/collection_sample_orig.tsv",
     "path_corpus": "./assets/msmarco/passage_re_ranking/collection.tsv",
     "path_queries": "./assets/msmarco/passage_re_ranking/queries.dev.tsv",
+    "path_queries_train": "./assets/msmarco/passage_re_ranking/queries.train.tsv",
     # "path_queries": "./assets/msmarco/passage_re_ranking/queries.dev.small.tsv",
     "path_top1000": "./assets/msmarco/passage_re_ranking/top1000.dev",
     "ir_path": "msmarco-passage/train",
+    "id_pairs": "./assets/msmarco/passage_re_ranking/msm_id_pairs.csv",
 }
 
 SRC_TREC = {}

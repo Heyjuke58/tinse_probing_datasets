@@ -58,7 +58,7 @@ def get_queries(path: Path, fix_unicode_errors: bool = True) -> pd.DataFrame:
     logging.info("Queries preprocessed.")
 
     return queries_df
-
+    
 
 def sample_fever_data(
     split: str, size: int, seed: int = 12
@@ -180,13 +180,51 @@ def sample_queries_and_passages(
     return passage_query_df
 
 
-def sample_bm25_train_queries(
+def sample_train_queries(
     query_df: pd.DataFrame,
     size: int,
-    samples_per_query: int,
 ) -> pd.DataFrame:
-    sampled_queries = random.sample(query_df["pid"].tolist(), size)
-    return query_df
+    new_query_df = query_df.copy()
+    sampled_queries = random.sample(query_df["qid"].tolist(), query_df.shape[0]) # TODO: rewrite to size (only for coreference res)
+    mask = query_df["qid"].isin(sampled_queries)
+    return new_query_df[mask]
+
+
+def get_id_pairs_df(
+    corpus_df: pd.DataFrame,
+    queries_df: pd.DataFrame,
+    id_pairs: pd.DataFrame,
+) -> pd.DataFrame:
+    # new_corpus_df = corpus_df.copy()
+    # new_queries_df = queries_df.copy()
+
+    # new_corpus_mask = new_corpus_df["pid"].isin(id_pairs["p_id"])
+    # new_queries_mask = new_queries_df["qid"].isin(id_pairs["q_id"])
+
+    # new_corpus_df = new_corpus_df[new_corpus_mask]
+    # new_queries_df = new_queries_df[new_queries_mask]
+
+    id_pairs["passage"] = id_pairs.apply(
+        lambda x: corpus_df.loc[corpus_df["pid"] == x["pid"]]["passage"].values[0], axis=1
+    )
+    id_pairs["query"] = id_pairs.apply(
+        lambda x: queries_df.loc[queries_df["qid"] == x["qid"]]["query"].values[0], axis=1
+    )
+
+    # new_corpus_df = set_new_index(new_corpus_df)
+    # new_queries_df = set_new_index(new_queries_df)
+    # id_pairs_df = pd.concat([new_corpus_df, new_queries_df], sort=False, axis=1)
+    p_n_n_mask = id_pairs["passage"].notnull()
+    q_n_n_mask = id_pairs["passage"].notnull()
+    print(f"passage non's: {sum(~p_n_n_mask)}")
+    print(f"query non's: {sum(~q_n_n_mask)}")
+    
+    print(id_pairs.shape)
+    id_pairs = id_pairs[p_n_n_mask]
+    print(id_pairs.shape)
+    id_pairs = id_pairs[q_n_n_mask]
+    print(id_pairs.shape)
+    return id_pairs
 
 
 def get_dataset_from_existing_sample(

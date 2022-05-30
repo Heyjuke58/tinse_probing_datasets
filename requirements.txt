@@ -7,5 +7,5 @@ nltk
 # python -m spacy download en_core_web_sm
 # python -m spacy download en_core_web_trf
 ftfy
-elasticsearch
+elasticsearch==7.12.1
 scipy
