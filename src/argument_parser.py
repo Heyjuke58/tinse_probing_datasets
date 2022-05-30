@@ -68,7 +68,7 @@ def parse_arguments():
         dest="neg_sample_ratio",
         default="50,50",
         help="""Ratio of negative sampling containing easy and hard examples. 
-            First number corresponds to percentage * 100 of easy examples (random word), second for harder (other entities in the passage).
+            First number corresponds to percentage of easy examples (random word from the passage), second for harder (other entities in the passage).
             Must add up to 100. Default: 50,50""",
     )
     parser.add_argument('--id_pairs', dest='id_pairs', action='store_true')

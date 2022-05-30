@@ -793,33 +793,3 @@ class DatasetCreator:
 
         for set_name, dataset in json_res.items():
             self.write_dataset_to_file("fact_checking", dataset, set_name)
-
-
-# def get_dataset_from_existing_sample_ir(sample_path: Path) -> pd.DataFrame:
-#     try:
-#         passage_query_df = pd.read_csv(sample_path, seo=",")
-#     except FileNotFoundError:
-#         logging.error(f"File {sample_path} you are trying to load the sample from does not exist.")
-#         return
-#     fever = ir_datasets.load(SRC_DATASETS[args.source]["dataset_path"])
-#     doc_store = fever.docs_store()
-#     query_store = fever.queries_store()
-#     for qrel in fever.qrels_iter():
-#         print(qrel)
-#         doc = doc_store.get(qrel.doc_id)
-#         query = query_store.get(qrel.query_id)
-#     passage_query_df["query"] = passage_query_df.apply(lambda x: query_store.get(x), axis=1)
-
-
-# def fact_checking_dataset_creation(corpus_dfs, queries_dfs, qrels) -> None:
-#     fever = ir_datasets.load(SRC_DATASETS[source]["dataset_path"])
-#     doc_store = fever.docs_store()
-#     query_df = pd.DataFrame(fever.queries_iter())
-#     if args.sample_path is not None:
-#         get_dataset_from_existing_sample_ir(fever, doc_store, query_df)
-#     else:
-
-#         for qrel in fever.qrels_iter():
-#             doc = doc_store.get(qrel.doc_id)
-#             query = query_df[query_df["query_id"] == qrel.query_id]
-#             print(qrel)

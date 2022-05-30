@@ -185,7 +185,7 @@ def sample_train_queries(
     size: int,
 ) -> pd.DataFrame:
     new_query_df = query_df.copy()
-    sampled_queries = random.sample(query_df["qid"].tolist(), query_df.shape[0]) # TODO: rewrite to size (only for coreference res)
+    sampled_queries = random.sample(query_df["qid"].tolist(), size)
     mask = query_df["qid"].isin(sampled_queries)
     return new_query_df[mask]
 
