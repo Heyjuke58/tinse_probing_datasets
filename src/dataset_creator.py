@@ -38,6 +38,11 @@ from src.utils import (
 
 
 class DatasetCreator:
+    """
+    Main class to create datasets from various sources for the tasks:
+    BM25, Semantic Similarity, Term Frequency, Named Entity Recognition, Coreference Resolution
+    """
+
     def __init__(
         self,
         tasks: List[str],
@@ -49,7 +54,7 @@ class DatasetCreator:
         sample_path: Optional[str] = None,
         neg_sample_ratio: Optional[str] = None,
         split: Optional[str] = None,
-        id_pairs: bool = False
+        id_pairs: bool = False,
     ) -> None:
         logging.basicConfig(
             filename=f"{source}_{get_timestamp()}.log", filemode="w+", level=logging.INFO
@@ -144,7 +149,9 @@ class DatasetCreator:
                 self.dataset_df = sample_train_queries(self.query_df, self.size)
             elif id_pairs:
                 self.query_df = get_queries(Path(SRC_DATASETS[self.source]["path_queries_train"]))
-                id_pairs_df = pd.read_csv(Path(SRC_DATASETS[self.source]["id_pairs"]), sep=",", encoding="utf8")
+                id_pairs_df = pd.read_csv(
+                    Path(SRC_DATASETS[self.source]["id_pairs"]), sep=",", encoding="utf8"
+                )
                 self.dataset_df = get_id_pairs_df(self.corpus_df, self.query_df, id_pairs_df)
 
             else:
@@ -178,7 +185,14 @@ class DatasetCreator:
             if task in self.tasks:
                 func()
 
-    def write_dataset_to_file(self, task: str, dataset, set_name: Optional[str] = None) -> None:
+    def write_dataset_to_file(self, task: str, dataset: List[Dict], set_name: Optional[str] = None) -> None:
+        """Writes a dataset in form of a list containing dictionaries to a json file.
+
+        Args:
+            task (str): Task
+            dataset (List[Dict]): Dataset
+            set_name (Optional[str], optional): Train, Val, Test. Defaults to None.
+        """
         output_filename = (
             SRC_DATASETS[self.source]["short"]
             + f"_{set_name + '_' if set_name is not None else ''}{task}_{self.size}_{self.samples_per_query}_{get_timestamp()}.json"
@@ -189,7 +203,15 @@ class DatasetCreator:
 
         logging.info(f"{task} dataset saved to ./datasets/{output_filename}")
 
-    def _init_es_bm25(self, pool) -> ElasticSearchBM25:
+    def _init_es_bm25(self, pool: Dict) -> ElasticSearchBM25:
+        """Initializes elastic search container to enable BM25 computation
+
+        Args:
+            pool (Dict): Corpus pool
+
+        Returns:
+            ElasticSearchBM25
+        """
         bm25 = ElasticSearchBM25(
             pool,
             index_name=SRC_DATASETS[self.source]["index_name"],
@@ -655,7 +677,9 @@ class DatasetCreator:
             q_text = row[1]["query"]
             qid = row[1]["qid"]
             q = self.query_df.loc[self.query_df["qid"] == qid]
-            documents_ranked = bm25.query(q_text, topk=50) # get 50 to have more passages if some do not contain matching coreferences
+            documents_ranked = bm25.query(
+                q_text, topk=50
+            )  # get 50 to have more passages if some do not contain matching coreferences
             for pid, p_text in documents_ranked.items():
                 has_target = False
                 doc = coref_nlp(q_text + " " + p_text)
@@ -681,7 +705,9 @@ class DatasetCreator:
                                     passages = pd.concat(
                                         [
                                             passages,
-                                            pd.DataFrame({"pid": pid, "passage": p_text}, index=[pid]),
+                                            pd.DataFrame(
+                                                {"pid": pid, "passage": p_text}, index=[pid]
+                                            ),
                                         ]
                                     )
                                 total_samples += 1

@@ -1,4 +1,5 @@
 from numpy import int64
+import numpy as np
 import pandas as pd
 import time
 import logging
@@ -58,7 +59,7 @@ def get_queries(path: Path, fix_unicode_errors: bool = True) -> pd.DataFrame:
     logging.info("Queries preprocessed.")
 
     return queries_df
-    
+
 
 def sample_fever_data(
     split: str, size: int, seed: int = 12
@@ -125,6 +126,20 @@ def sample_queries_and_passages(
     source: str,
     save_sample: bool = True,
 ) -> pd.DataFrame:
+    """Samples pairs of queries and passages for a dataset.
+
+    Args:
+        corpus_df (pd.DataFrame): Corpus
+        query_df (pd.DataFrame): Queries
+        q_p_top1000 (Dict[int, List[int]]): Top1000 passages per query
+        size (int): Size of the sampled dataset
+        samples_per_query (int): Sampled passages per query
+        source (str): Source of the data (msmarco, ...)
+        save_sample (bool, optional): Whether to save the sample to reuse it at a later point in time. Defaults to True.
+
+    Returns:
+        pd.DataFrame: The sampled dataset as a dataframe. Header: (pid, qid, query, passage)
+    """
     rand_queries: pd.DataFrame = pd.DataFrame()
     rand_passages: pd.DataFrame = pd.DataFrame()
 
@@ -184,6 +199,15 @@ def sample_train_queries(
     query_df: pd.DataFrame,
     size: int,
 ) -> pd.DataFrame:
+    """Samples queries from the train set of msmarco
+
+    Args:
+        query_df (pd.DataFrame): Train queries
+        size (int): Desired size
+
+    Returns:
+        pd.DataFrame: Sampled dataset as DataFrame. Header (qid, query)
+    """
     new_query_df = query_df.copy()
     sampled_queries = random.sample(query_df["qid"].tolist(), size)
     mask = query_df["qid"].isin(sampled_queries)
@@ -195,41 +219,47 @@ def get_id_pairs_df(
     queries_df: pd.DataFrame,
     id_pairs: pd.DataFrame,
 ) -> pd.DataFrame:
-    # new_corpus_df = corpus_df.copy()
-    # new_queries_df = queries_df.copy()
+    """Create dataset from id pairs file
 
-    # new_corpus_mask = new_corpus_df["pid"].isin(id_pairs["p_id"])
-    # new_queries_mask = new_queries_df["qid"].isin(id_pairs["q_id"])
+    Args:
+        corpus_df (pd.DataFrame): Corpus
+        queries_df (pd.DataFrame): Queries
+        id_pairs (pd.DataFrame): Id pairs dataframe
 
-    # new_corpus_df = new_corpus_df[new_corpus_mask]
-    # new_queries_df = new_queries_df[new_queries_mask]
-
+    Returns:
+        pd.DataFrame: The dataset
+    """
     id_pairs["passage"] = id_pairs.apply(
         lambda x: corpus_df.loc[corpus_df["pid"] == x["pid"]]["passage"].values[0], axis=1
     )
     id_pairs["query"] = id_pairs.apply(
         lambda x: queries_df.loc[queries_df["qid"] == x["qid"]]["query"].values[0], axis=1
     )
-
-    # new_corpus_df = set_new_index(new_corpus_df)
-    # new_queries_df = set_new_index(new_queries_df)
-    # id_pairs_df = pd.concat([new_corpus_df, new_queries_df], sort=False, axis=1)
+    id_pairs = id_pairs.replace("", np.nan)
     p_n_n_mask = id_pairs["passage"].notnull()
     q_n_n_mask = id_pairs["passage"].notnull()
-    print(f"passage non's: {sum(~p_n_n_mask)}")
-    print(f"query non's: {sum(~q_n_n_mask)}")
-    
-    print(id_pairs.shape)
     id_pairs = id_pairs[p_n_n_mask]
-    print(id_pairs.shape)
     id_pairs = id_pairs[q_n_n_mask]
-    print(id_pairs.shape)
+
     return id_pairs
 
 
 def get_dataset_from_existing_sample(
     corpus_df: pd.DataFrame, query_df: pd.DataFrame, sample_path: Path
 ) -> pd.DataFrame:
+    """Reuse a sampled dataset from previous script runs
+
+    Args:
+        corpus_df (pd.DataFrame): Corpus
+        query_df (pd.DataFrame): Queries
+        sample_path (Path): Path to the sample
+
+    Raises:
+        FileNotFoundError: When the sample file could not be found
+
+    Returns:
+        pd.DataFrame: The dataset
+    """
     try:
         passage_query_df = pd.read_csv(sample_path, sep=",")
     except FileNotFoundError:
@@ -244,115 +274,3 @@ def get_dataset_from_existing_sample(
     )
 
     return passage_query_df
-
-
-def coref_res(arg):
-    dc, qid = arg
-    print(f"processing {qid}")
-    passages: pd.DataFrame = pd.DataFrame()
-    queries = None
-
-    targets: Dict[str, List[Tuple[bool, str, List, str, List]]] = defaultdict(list)
-    samples_per_query = 0
-    possible_passages = dc.q_p_top1000_dict[qid][:100] # take only the first 100 passages due to runtime minimization
-    sampled_passages = random.sample(possible_passages, len(possible_passages))
-    q = dc.query_df.loc[dc.query_df["qid"] == qid]
-    q_text = q["query"].values[0]
-    for pid in sampled_passages:
-        has_target = False
-        p = dc.doc_store.get(str(pid)).text
-        doc = dc.coref_nlp(q_text + " " + p)
-        query = dc.coref_nlp(q_text)
-        skip_passage = False
-        for cluster in doc._.coref_clusters:
-            if skip_passage:
-                break
-            query_references: List[Tuple[str, int, int]] = []
-            for reference in cluster:
-                # only consider those references that appear in the query
-                if reference.start < len(query) and reference.end <= len(query):
-                    query_references.append(
-                        (reference.text, reference.start, reference.end)
-                    )
-                elif query_references:
-                    for text, start, end in query_references:
-                        # add positive example
-                        if not has_target:
-                            samples_per_query += 1
-                            dc.total_dataset_size += 1
-                            has_target = True
-                            # logging.info(f"Coref res dataset size: {self.total_dataset_size} ({j}/{len(sampled_queries)} queries processed)")
-                            passages = pd.concat([passages, pd.DataFrame({"pid": pid, "passage": p}, index=[pid])])
-                        targets[str(pid) + " " + str(qid)].append(
-                            (
-                                True,
-                                text,
-                                [start, end],
-                                reference.text,
-                                [reference.start, reference.end],
-                            )
-                        )
-                        # add negative example
-                        dc.total_samples += 1
-                        possible_hard_examples = dc.hard_example_possible(
-                            doc, len(query), text, reference
-                        )
-                        easy = (
-                            True
-                            if dc.num_easy_neg_samples / dc.total_samples < dc.neg_sample_ratio_easy
-                            # get easy example if hard one is not possiblle
-                            or not possible_hard_examples
-                            else False
-                        )
-                        if easy:
-                            dc.num_easy_neg_samples += 1
-                            random_word = text
-                            while random_word == text:
-                                random_word = random.sample(set(dc.coref_nlp.vocab.strings), 1)[0]
-                            targets[str(pid) + " " + str(qid)].append(
-                                (False, text, [start, end], random_word, [])
-                            )
-                        else:
-                            neg_sample = random.choice(possible_hard_examples)
-                            targets[str(pid) + " " + str(qid)].append(
-                                (
-                                    False,
-                                    text,
-                                    [start, end],
-                                    neg_sample.text,
-                                    [neg_sample.start, neg_sample.end],
-                                )
-                            )
-                # no more interesting references
-                else:
-                    skip_passage = True
-                    break
-        # break (and continue with next query) if enough passages have been sampled for a single query
-        if samples_per_query >= dc.samples_per_query:
-            break
-    # coreferences found for query
-    if samples_per_query != 0:
-        queries = pd.concat(
-            [q] * samples_per_query,
-            ignore_index=True,
-        )
-    # break if dataset has desired size
-    # if dc.total_dataset_size >= dc.size:
-    #     return 
-
-    return passages, queries, targets
-
-# offset = 6
-
-# for i in range(0, len(sampled_queries), offset):
-#     with ProcessingPool(6) as p:
-#         rnge = range(i, min(i + offset, len(sampled_queries)))
-#         res = p.map(coref_res, [(self, sampled_queries[j]) for j in rnge])
-#         for p, q, t in res:
-#             if q is not None:
-#                 queries = pd.concat([queries, q], ignore_index=True)
-#                 passages = pd.concat([passages, p], ignore_index=True)
-#                 targets.update(t)
-#         print(len(queries))
-#     if len(queries) >= self.size:
-#         break
