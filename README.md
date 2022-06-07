@@ -59,7 +59,7 @@ Naming of Datasets saved in ``/datasets``: ``{source}_{task}_{size}_{samples_per
 | -sp, --sample_path   | Reuse an existing sample of a dataset. You need to specify the name of the file in ./datasets/samples/. Every time a dataset is newly sampled it is saved in csv format. Naming format: {src}_{size}_{samples per query}_{timestamp}.csv. If set --size and --samples_per_query are ignored) | -|
 | -ph, --port_http   | Http Port for elasticsearch container, should correspond to the port the docker container is bound to | 12375 |
 | -pt, --port_tcp   | TCP Port for elasticsearch container, should correspond to the port the docker container is bound to | 12376 |
-| --split   | Only relevant for  Train, val and test split ratio. Must add up to 100 | 70,15,15 |
+| --split   | Only relevant for Factchecking Task. Train, val and test split ratio. Must add up to 100 | 70,15,15 |
 | --neg_sample_ratio   | Only relevant for coreference resolution. Ratio of negative sampling containing easy and hard examples. First number corresponds to percentage * 100 of easy examples (random word from the passage), second for harder (other entities in the passage). Must add up to 100 | 50,50 |
 | --id_pairs   | Flag whether ID pairs (MSMARCO) from csv (assets/msmarco/passage_re_ranking/msm_id_pairs.csv) should be used to create the datasets  | - |
 
