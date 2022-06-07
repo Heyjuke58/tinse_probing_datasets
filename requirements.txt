@@ -9,3 +9,4 @@ nltk
 ftfy
 elasticsearch==7.12.1
 scipy
+ir_datasets
