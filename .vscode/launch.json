@@ -27,6 +27,31 @@
             ]
         },
         {
+            "name": "BM25 Train",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/dataset_creation.py",
+            "console": "integratedTerminal",
+            "args": [
+                "-s=100",
+                "-sq=10",
+                "-src=msmarco",
+                "-t=bm25train"
+            ]
+        },
+        {
+            "name": "ID Pairs",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/dataset_creation.py",
+            "console": "integratedTerminal",
+            "args": [
+                "-src=msmarco",
+                "-t=bm25",
+                "--id_pairs"
+            ]
+        },
+        {
             "name": "Python: Current File",
             "type": "python",
             "request": "launch",
